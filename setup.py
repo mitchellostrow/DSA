@@ -13,7 +13,7 @@ setuptools.setup(
     install_requires=[
         'numpy>=1.24.0',
         'scipy>=1.9.3',
-        'torch>=1.13.0'
+        'torch>=2.0.0'
         'tqdm>=4.32.2'
     ],
     extras_require={
