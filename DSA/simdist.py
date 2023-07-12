@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from typing import Literal
+import numpy as np
 import torch.nn.utils.parametrize as parametrize
 
 class LearnableOrthogonalSimilarityTransform(nn.Module):
@@ -82,7 +83,12 @@ class SimilarityTransformDist:
         self.device = device
         self.C_star = None
 
-    def fit(self, A, B):
+    def fit(self, 
+            A, 
+            B, 
+            iters = None, 
+            lr = 0.01, 
+            verbose = False):
         """
         Computes the optimal orthonormal matrix C
 
@@ -90,17 +96,29 @@ class SimilarityTransformDist:
         __________
         A : np.array or torch.tensor
             first data matrix
-        B ; np.array or torch.tensor
+        B : np.array or torch.tensor
             second data matrix
-
+        iters : int or None
+            number of optimization steps, if None then resorts to saved self.iters
+        lr : float or None
+            learning rate, if None then resorts to saved self.lr
+        verbose : bool
+            prints when finished optimizing
         Returns
         _______
         None
         """
-        
-        A = torch.from_numpy(A).float().to(self.device)
-        B = torch.from_numpy(B).float().to(self.device)
+        assert A.shape[0] == A.shape[1]
+        assert B.shape[0] == B.shape[1]
+        assert A.shape[0] == B.shape[1]
+
+        if isinstance(A,np.array):
+            A = torch.from_numpy(A).float().to(self.device)
+        if isinstance(B,np.array):
+            B = torch.from_numpy(B).float().to(self.device)
         n = A.shape[0]
+        lr = self.lr if lr is None else lr
+        iters = self.iters if iters is None else iters
 
         #parameterize mapping to be orthogonal
         ortho_sim_net = LearnableOrthogonalSimilarityTransform(n).to(self.device)
@@ -109,10 +127,10 @@ class SimilarityTransformDist:
         
         simdist_loss = nn.MSELoss(reduction = 'mean')
 
-        optimizer = optim.Adam(ortho_sim_net.parameters(), lr=self.lr)
+        optimizer = optim.Adam(ortho_sim_net.parameters(), lr=lr)
 
         self.losses = []
-        for _ in range(self.iters):
+        for _ in range(iters):
             # Zero the gradients of the optimizer.
             optimizer.zero_grad()      
             # Compute the Frobenius norm between A and the product.
@@ -123,10 +141,12 @@ class SimilarityTransformDist:
             optimizer.step()
 
             self.losses.append(loss.item())
+        if verbose:
+            print("Finished optimizing C")
 
         self.C_star = ortho_sim_net.C.detach()
     
-    def score(self,A,B):
+    def score(self,A,B,score_method=None):
         """
         Given an optimal C already computed, calculate the metric
 
@@ -136,7 +156,8 @@ class SimilarityTransformDist:
             first data matrix
         B : np.array or torch.tensor
             second data matrix        
-
+        score_method : None or {'angular','euclidean'}
+            overwrites the score method in the object for this application
         Returns
         _______
 
@@ -144,12 +165,15 @@ class SimilarityTransformDist:
             similarity of the data under the similarity transform w.r.t C
         """
         assert self.C_star is not None 
+        assert A.shape == self.C_star.shape
+        assert B.shape == self.C_star.shape
+        score_method = self.score_method if score_method is None else score_method
         with torch.no_grad():
             A = torch.from_numpy(A).float().to(self.device)
             B = torch.from_numpy(B).float().to(self.device)
             C = self.C_star.to(self.device)
 
-        if self.score_method == 'angular':    
+        if score_method == 'angular':    
             num = torch.trace(A @ C @ B.T @ C.T)
             den = torch.norm(A,p = 'fro')*torch.norm(B,p = 'fro')
             score = torch.arccos(num/den).cpu().numpy()
@@ -158,7 +182,12 @@ class SimilarityTransformDist:
     
         return score
     
-    def fit_score(self,A,B):
+    def fit_score(self,
+                  A,
+                  B,
+                  iters = None, 
+                  lr = 0.01,
+                  score_method = None):
         """
         for efficiency, computes the optimal matrix and returns the score 
 
@@ -168,15 +197,22 @@ class SimilarityTransformDist:
             first data matrix
         B : np.array or torch.tensor
             second data matrix        
-
+        iters : int or None
+            number of optimization steps, if None then resorts to saved self.iters
+        lr : float or None
+            learning rate, if None then resorts to saved self.lr
+        score_method : {'angular','euclidean'} or None
+            overwrites parameter in the class
+        
         Returns
         _______
 
         score : float
             similarity of the data under the similarity transform w.r.t C
+            
         """
+        score_method = self.score_method if score_method is None else score_method
+        self.fit(A, B,iters,lr)
+        score_star = self.score(A,B,score_method)
 
-        C_star, losses = self.fit(A, B)
-        score_star = self.score(A,B)
-
-        return C_star, score_star.item(), losses
+        return score_star.item()
