@@ -20,7 +20,7 @@ def embed_signal_torch(data, n_delays, delay_interval=1):
 
     n_delays : int
         Parameter that controls the size of the delay embedding. Explicitly,
-        the number of delays to include.
+        the number of delays to include - must be at least 1.
 
     delay_interval : int
         The number of time steps between each delay in the delay embedding. Defaults
@@ -69,7 +69,7 @@ class DMD:
 
         n_delays : int
             Parameter that controls the size of the delay embedding. Explicitly,
-            the number of delays to include.
+            the number of delays to include - must be at least 1.
 
         delay_interval : int
             The number of time steps between each delay in the delay embedding. Defaults
@@ -158,7 +158,7 @@ class DMD:
 
         n_delays : int
             Parameter that controls the size of the delay embedding. Explicitly,
-            the number of delays to include. Defaults to None - provide only if you want
+            the number of delays to include - must be at least 1. Defaults to None - provide only if you want
             to override the value of n_delays from the init.
 
         delay_interval : int
@@ -303,7 +303,7 @@ class DMD:
 
         n_delays : int
             Parameter that controls the size of the delay embedding. Explicitly,
-            the number of delays to include. Defaults to None - provide only if you want to
+            the number of delays to include - must be at least 1. Defaults to None - provide only if you want to
             override the value from the init.
 
         delay_interval : int
@@ -332,8 +332,8 @@ class DMD:
             if you want to override the value from the init.
 
         verbose: bool
-            If True, print statements will be provided about the progress of the fitting procedure. 
-            Defaults to None - provide only if you want to override the value from the init.
+            If True, returns the predictions, as well as the predicted and true Hankel matrices. If False,
+            only returns the predictions.
         """
         # if parameters are provided, overwrite them from the init
         self.device = self.device if device is None else device
@@ -347,9 +347,34 @@ class DMD:
     def predict(
         self,
         test_data=None,
-        reseed=None,
+        reseed=1,
         full_return=False
     ):
+        """
+        Computes the Hankel matrix from the provided data.
+
+        Parameters
+        ----------
+        test_data : np.ndarray or torch.tensor
+            The data to fit the DMD model to. Must be either: (1) a
+            2-dimensional array/tensor of shape T x N where T is the number
+            of time points and N is the number of observed dimensions
+            at each time point, or (2) a 3-dimensional array/tensor of shape
+            K x T x N where K is the number of "trials" and T and N are
+            as defined above. Defaults to None, in which case self.data is used.
+
+        reseed : int
+            Parameter that controls the regularity at which the generated prediction
+            is reinitalized from the true state of the system. Explicitly, if reseed = 5,
+            then every 5 time steps, the prediction is generated based off the true previous
+            state, not the predicted previous state. Defaults to 1, which corresponds to one-step
+            prediction.
+
+        full_return : bool
+            The number of time steps between each delay in the delay embedding. Defaults
+            to 1 time step. Defaults to None - provide only if you want
+            to override the value of n_delays from the init.
+        """        
         # initialize test_data
         if test_data is None:
             test_data = self.data
@@ -359,9 +384,6 @@ class DMD:
         if ndim == 2:
             test_data = test_data.unsqueeze(0)
         H_test = embed_signal_torch(test_data, self.n_delays, self.delay_interval)
-
-        if reseed is None:
-            reseed = 1
 
         H_test_havok_dmd = torch.zeros(H_test.shape).to(self.device)
         H_test_havok_dmd[:, 0] = H_test[:, 0]
