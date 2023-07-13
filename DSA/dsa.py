@@ -92,7 +92,7 @@ class DSA:
         #get a list of all DMDs here
         self.dmds = [[DMD(Xi,n_delays,delay_interval,rank,rank_thresh, lamb,device,verbose) for Xi in dat] for dat in self.data]
         
-        self.simdist = SimilarityTransformDist(iters,score_method,lr,device)
+        self.simdist = SimilarityTransformDist(iters,score_method,lr,device,verbose)
 
     def check_method(self):
         tensor_or_np = lambda x: isinstance(x,np.ndarray) or isinstance(x,torch.Tensor)

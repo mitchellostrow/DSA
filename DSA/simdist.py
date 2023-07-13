@@ -60,7 +60,8 @@ class SimilarityTransformDist:
                  iters = 200, 
                  score_method: Literal["angular", "euclidean"] = "angular",
                  lr = 0.01,
-                 device = 'cpu'
+                 device = 'cpu',
+                 verbose = False
                 ):
         """
         Parameters
@@ -75,11 +76,15 @@ class SimilarityTransformDist:
             learning rate
 
         device : {'cpu','cuda'} or int
+
+        verbose : bool
+            prints when finished optimizing
         """
 
         self.iters = iters
         self.score_method = score_method
         self.lr = lr
+        self.verbose = verbose
         self.device = device
         self.C_star = None
         self.A = None
@@ -91,7 +96,7 @@ class SimilarityTransformDist:
             iters = None, 
             lr = 0.01, 
             zero_pad = True,
-            verbose = False):
+            ):
         """
         Computes the optimal orthonormal matrix C
 
@@ -107,8 +112,6 @@ class SimilarityTransformDist:
             learning rate, if None then resorts to saved self.lr
         zero_pad : bool
             if True, then the smaller matrix will be zero padded so its the same size
-        verbose : bool
-            prints when finished optimizing
 
         Returns
         _______
@@ -159,7 +162,7 @@ class SimilarityTransformDist:
 
             self.losses.append(loss.item())
 
-        if verbose:
+        if self.verbose:
             print("Finished optimizing C")
 
         self.C_star = ortho_sim_net.C.detach()
