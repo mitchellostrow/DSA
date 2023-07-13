@@ -1,0 +1,7 @@
+numpy>=1.24.0
+scipy>=1.9.3
+torch>=2.0.0
+tqdm>=4.32.2
+
+[dev]
+pytest>=3.7

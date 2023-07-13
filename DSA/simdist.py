@@ -82,12 +82,15 @@ class SimilarityTransformDist:
         self.lr = lr
         self.device = device
         self.C_star = None
+        self.A = None
+        self.B = None
 
     def fit(self, 
             A, 
             B, 
             iters = None, 
             lr = 0.01, 
+            zero_pad = True,
             verbose = False):
         """
         Computes the optimal orthonormal matrix C
@@ -102,20 +105,34 @@ class SimilarityTransformDist:
             number of optimization steps, if None then resorts to saved self.iters
         lr : float or None
             learning rate, if None then resorts to saved self.lr
+        zero_pad : bool
+            if True, then the smaller matrix will be zero padded so its the same size
         verbose : bool
             prints when finished optimizing
+
         Returns
         _______
         None
         """
         assert A.shape[0] == A.shape[1]
         assert B.shape[0] == B.shape[1]
-        assert A.shape[0] == B.shape[1]
+        assert A.shape[0] == B.shape[1] or zero_pad
 
-        if isinstance(A,np.array):
-            A = torch.from_numpy(A).float().to(self.device)
-        if isinstance(B,np.array):
-            B = torch.from_numpy(B).float().to(self.device)
+        if zero_pad:
+            with torch.no_grad():
+                dim = max(A.shape[0],B.shape[0])
+                A1 = torch.zeros((dim,dim))
+                A1 += A
+                A = A1
+
+                B1 = torch.zeros((dim,dim))
+                B1 += B
+                B = B1
+
+        if isinstance(A,np.ndarray):
+            self.A = torch.from_numpy(A).float().to(self.device)
+        if isinstance(B,np.ndarray):
+            self.B = torch.from_numpy(B).float().to(self.device)
         n = A.shape[0]
         lr = self.lr if lr is None else lr
         iters = self.iters if iters is None else iters
@@ -141,21 +158,22 @@ class SimilarityTransformDist:
             optimizer.step()
 
             self.losses.append(loss.item())
+
         if verbose:
             print("Finished optimizing C")
 
         self.C_star = ortho_sim_net.C.detach()
     
-    def score(self,A,B,score_method=None):
+    def score(self,A=None,B=None,score_method=None):
         """
         Given an optimal C already computed, calculate the metric
 
         Parameters
         __________
-        A : np.array or torch.tensor
-            first data matrix
-        B : np.array or torch.tensor
-            second data matrix        
+        A : np.array or torch.tensor or None
+            first data matrix, if None defaults to the saved matrix in fit
+        B : np.array or torch.tensor or None
+            second data matrix if None, defaults to the savec matrix in fit
         score_method : None or {'angular','euclidean'}
             overwrites the score method in the object for this application
         Returns
@@ -164,13 +182,19 @@ class SimilarityTransformDist:
         score : float
             similarity of the data under the similarity transform w.r.t C
         """
-        assert self.C_star is not None 
+        assert self.C_star is not None
+        A = self.A if A is None else A
+        B = self.B if B is None else B 
+        assert A is not None
+        assert B is not None
         assert A.shape == self.C_star.shape
         assert B.shape == self.C_star.shape
         score_method = self.score_method if score_method is None else score_method
         with torch.no_grad():
-            A = torch.from_numpy(A).float().to(self.device)
-            B = torch.from_numpy(B).float().to(self.device)
+            if not isinstance(A,torch.Tensor):
+                A = torch.from_numpy(A).float().to(self.device)
+            if not isinstance(B,torch.Tensor):
+                B = torch.from_numpy(B).float().to(self.device)
             C = self.C_star.to(self.device)
 
         if score_method == 'angular':    

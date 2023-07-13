@@ -1,5 +1,5 @@
-from dmd import DMD
-from simdist import SimilarityTransformDist
+from DSA.dmd import DMD
+from DSA.simdist import SimilarityTransformDist
 from typing import Literal
 import torch
 import numpy as np
@@ -14,6 +14,7 @@ class DSA:
                 n_delays=1,
                 delay_interval=1,
                 rank=None,
+                rank_thresh=None,
                 lamb = 0.0,
                 iters = 200,
                 score_method: Literal["angular", "euclidean"] = "angular",
@@ -42,6 +43,11 @@ class DSA:
 
         rank : int
             rank of DMD matrix fit in reduced-rank regression
+        
+        rank_thresh : float
+            Parameter that controls the rank of V in fitting HAVOK DMD by dictating a threshold
+            of singular values to use. Explicitly, the rank of V will be the number of singular
+            values greater than rank_thresh. Defaults to None.
         
         lamb : float
             L-1 regularization parameter in DMD fit
@@ -75,6 +81,7 @@ class DSA:
         self.n_delays = n_delays
         self.delay_interval = delay_interval
         self.rank = rank
+        self.rank_thresh = rank_thresh
         self.lamb = lamb
         self.iters = iters
         self.score_method = score_method
@@ -83,12 +90,12 @@ class DSA:
         self.verbose = verbose
 
         #get a list of all DMDs here
-        self.dmds = [[DMD(Xi,n_delays,delay_interval,rank,lamb,device) for Xi in dat] for dat in self.data]
+        self.dmds = [[DMD(Xi,n_delays,delay_interval,rank,rank_thresh, lamb,device,verbose) for Xi in dat] for dat in self.data]
         
         self.simdist = SimilarityTransformDist(iters,score_method,lr,device)
 
     def check_method(self):
-        tensor_or_np = lambda x: isinstance(x,np.array) or isinstance(x,torch.tensor)
+        tensor_or_np = lambda x: isinstance(x,np.ndarray) or isinstance(x,torch.Tensor)
 
         if isinstance(self.X,list):
             if self.Y is None:
@@ -183,7 +190,6 @@ class DSA:
 
         Returns
         ________
-
         score : float
             similarity score of the two precomputed DMDs
         """
@@ -198,7 +204,14 @@ class DSA:
         sims = np.zeros((len(self.dmds[0]),len(self.dmds[ind2])))
         for i,dmd1 in enumerate(self.dmds[0]):
             for j,dmd2 in enumerate(self.dmds[ind2]):
-                sims[i,j] = self.simdist.fit_score(dmd1.A,dmd2.A,iters,lr,score_method)
+                if self.method == 'self-pairwise':
+                    if i == j: 
+                        continue
+                    if j > i:
+                        continue
+                    sims[i,j] = sims[j,i] = self.simdist.fit_score(dmd1.A_v,dmd2.A_v,iters,lr,score_method)
+                else:
+                    sims[i,j] = self.simdist.fit_score(dmd1.A_v,dmd2.A_v,iters,lr,score_method)
 
         return sims
 
