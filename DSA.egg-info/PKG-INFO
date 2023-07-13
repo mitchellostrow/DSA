@@ -1,9 +1,0 @@
-Metadata-Version: 2.1
-Name: DSA
-Version: 0.0.1
-Summary: Dynamical Similarity Analysis
-Home-page: https://github.com/mitchellostrow/DSA
-Author: Mitchell Ostrow
-Author-email: ostrow@mit.edu
-Provides-Extra: dev
-License-File: LICENSE
