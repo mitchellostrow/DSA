@@ -15,6 +15,7 @@ class DSA:
                 delay_interval=1,
                 rank=None,
                 rank_thresh=None,
+                rank_explained_variance = None,
                 lamb = 0.0,
                 iters = 200,
                 score_method: Literal["angular", "euclidean"] = "angular",
@@ -49,6 +50,10 @@ class DSA:
             of singular values to use. Explicitly, the rank of V will be the number of singular
             values greater than rank_thresh. Defaults to None.
         
+        rank_explained_variance : float
+            Parameter that controls the rank of V in fitting HAVOK DMD by indicating the percentage of
+            cumulative explained variance that should be explained by the columns of V. Defaults to None.
+        
         lamb : float
             L-1 regularization parameter in DMD fit
         
@@ -82,6 +87,7 @@ class DSA:
         self.delay_interval = delay_interval
         self.rank = rank
         self.rank_thresh = rank_thresh
+        self.rank_explained_variance = rank_explained_variance
         self.lamb = lamb
         self.iters = iters
         self.score_method = score_method
@@ -90,7 +96,7 @@ class DSA:
         self.verbose = verbose
 
         #get a list of all DMDs here
-        self.dmds = [[DMD(Xi,n_delays,delay_interval,rank,rank_thresh, lamb,device,verbose) for Xi in dat] for dat in self.data]
+        self.dmds = [[DMD(Xi,n_delays,delay_interval,rank,rank_thresh,rank_explained_variance,lamb,device,verbose) for Xi in dat] for dat in self.data]
         
         self.simdist = SimilarityTransformDist(iters,score_method,lr,device,verbose)
 
@@ -148,7 +154,7 @@ class DSA:
             else:
                 data.append([Y])
     
-        dmds = [[DMD(Xi,n_delays,delay_interval,rank,lamb,self.device) for Xi in dat] for dat in data]
+        dmds = [[DMD(Xi,n_delays,delay_interval,rank,lamb=lamb,device=self.device) for Xi in dat] for dat in data]
             
         for dmd_sets in dmds:
             for dmd in dmd_sets:

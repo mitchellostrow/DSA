@@ -197,6 +197,7 @@ class DMD:
         """
         Computes the SVD of the Hankel matrix.
         """
+
         if self.verbose:
             print("Computing SVD on Hankel matrix ...")
         if self.ntrials > 1: #flatten across trials for 3d
@@ -206,28 +207,30 @@ class DMD:
         
         # compute the SVD
         U, S, Vh = torch.linalg.svd(H.T, full_matrices=False)
-        
-        # update attributes
-        V = Vh.T
-        self.U = U
-        self.S = S
-        self.V = V
 
-        # construct the singuar value matrix and its inverse
-        dim = self.n_delays * self.n
-        s = len(S)
-        self.S_mat = torch.zeros(dim, dim).to(self.device)
-        self.S_mat_inv = torch.zeros(dim, dim).to(self.device)
-        self.S_mat[np.arange(s), np.arange(s)] = S
-        self.S_mat_inv[np.arange(s), np.arange(s)] = 1/S
-
-        # compute explained variance
-        exp_variance_inds = self.S**2/((self.S**2).sum())
-        cumulative_explained = torch.cumsum(exp_variance_inds, 0)
-        self.cumulative_explained_variance = cumulative_explained
+        # print("HERE")
         
-        if self.verbose:
-            print("SVD complete!")
+        # # update attributes
+        # V = Vh.T
+        # self.U = U
+        # self.S = S
+        # self.V = V
+
+        # # construct the singuar value matrix and its inverse
+        # dim = self.n_delays * self.n
+        # s = len(S)
+        # self.S_mat = torch.zeros(dim, dim).to(self.device)
+        # self.S_mat_inv = torch.zeros(dim, dim).to(self.device)
+        # self.S_mat[np.arange(s), np.arange(s)] = S
+        # self.S_mat_inv[np.arange(s), np.arange(s)] = 1/S
+
+        # # compute explained variance
+        # exp_variance_inds = self.S**2/((self.S**2).sum())
+        # cumulative_explained = torch.cumsum(exp_variance_inds, 0)
+        # self.cumulative_explained_variance = cumulative_explained
+        
+        # if self.verbose:
+        #     print("SVD complete!")
     
     def compute_havok_dmd(
             self,
