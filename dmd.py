@@ -50,6 +50,7 @@ class DMD:
             delay_interval=1,
             rank=None,
             rank_thresh=None,
+            rank_explained_variance=None,
             lamb=0,
             device='cpu',
             verbose=False,
@@ -83,6 +84,10 @@ class DMD:
             of singular values to use. Explicitly, the rank of V will be the number of singular
             values greater than rank_thresh. Defaults to None.
 
+        rank_explained_variance : float
+            Parameter that controls the rank of V in fitting HAVOK DMD by indicating the percentage of
+            cumulative explained variance that should be explained by the columns of V. Defaults to None.
+
         lamb : float
             Regularization parameter for ridge regression. Defaults to 0.
 
@@ -100,6 +105,7 @@ class DMD:
         self.delay_interval = delay_interval
         self.rank = rank
         self.rank_thresh = rank_thresh
+        self.rank_explained_variance = rank_explained_variance
         self.lamb = lamb
         self.verbose = verbose
         
@@ -204,6 +210,11 @@ class DMD:
         self.S_mat_inv = torch.zeros(dim, dim).to(self.device)
         self.S_mat[np.arange(s), np.arange(s)] = S
         self.S_mat_inv[np.arange(s), np.arange(s)] = 1/S
+
+        # compute explained variance
+        exp_variance_inds = self.S**2/((self.S**2).sum())
+        cumulative_explained = torch.cumsum(exp_variance_inds, 0)
+        self.cumulative_explained_variance = cumulative_explained
         
         if self.verbose:
             print("SVD complete!")
@@ -212,6 +223,7 @@ class DMD:
             self,
             rank=None,
             rank_thresh=None,
+            rank_explained_variance=None,
             lamb=0,
         ):
         """
@@ -222,14 +234,18 @@ class DMD:
         rank : int
             The rank of V in fitting HAVOK DMD - i.e., the number of columns of V to 
             use to fit the DMD model. Defaults to None, in which case all columns of V
-            will be used. Provide only if you want to override the value of n_delays 
-            from the init.
+            will be used. Provide only if you want to override the value from the init.
 
-        rank_thresh : int
+        rank_thresh : float
             Parameter that controls the rank of V in fitting HAVOK DMD by dictating a threshold
             of singular values to use. Explicitly, the rank of V will be the number of singular
             values greater than rank_thresh. Defaults to None - provide only if you want
-            to override the value of n_delays from the init.
+            to override the value from the init.
+        
+        rank_explained_variance : float
+            Parameter that controls the rank of V in fitting HAVOK DMD by indicating the percentage of
+            cumulative explained variance that should be explained by the columns of V. Defaults to None -
+            provide only if you want to overried the value from the init.
 
         lamb : float
             Regularization parameter for ridge regression. Defaults to 0 - provide only if you want
@@ -241,16 +257,30 @@ class DMD:
         
         self.rank = self.rank if rank is None else rank
         self.rank_thresh = self.rank_thresh if rank_thresh is None else rank_thresh
+        self.rank_explained_variance = self.rank_explained_variance if rank_explained_variance is None else rank_explained_variance
         self.lamb = self.lamb if lamb is None else lamb
 
-        if self.rank is not None and self.rank_thresh is not None:
-            raise ValueError("Cannot provide both rank and rank_thresh - pick one!")
-        if self.rank is None and self.rank_thresh is None:
-            self.rank = len(self.S)
+        none_vars = (rank is None) + (rank_thresh is None) + (rank_explained_variance is None)
+        if none_vars < 2:
+            raise ValueError("More than one value was provided between rank, rank_thresh, and rank_explained_variance. Please provide only one of these, and ensure the others are None!")
+        elif none_vars == 3:
+           self.rank = len(self.S)
 
         if self.rank > self.H.shape[-1]:
             raise ValueError(f"Provided rank {self.rank} cannot be larger than the number of columns in H {self.H.shape[-1]} ")
         
+        if rank_thresh is not None:
+            if self.S[-1] > rank_thresh:
+                self.rank = len(self.S)
+            else:
+                self.rank = torch.argmax(torch.arange(len(self.S), 0, -1).to(self.device)*(self.S < rank_thresh))
+
+        if rank_explained_variance is not None:
+            if self.use_torch:
+                self.rank = int(torch.argmax((self.cumulative_explained_variance > rank_explained_variance).type(torch.int)).cpu().numpy())
+            else:
+                self.rank = int(np.argmax((self.cumulative_explained_variance > rank_explained_variance)))
+
         # reshape for leastsquares
         if self.ntrials > 1:
             V = self.V.reshape(self.H.shape)
@@ -283,6 +313,7 @@ class DMD:
             delay_interval=None,
             rank=None,
             rank_thresh=None,
+            rank_explained_variance=None,
             lamb=None,
             device=None,
             verbose=None,
@@ -320,6 +351,11 @@ class DMD:
             values greater than rank_thresh. Defaults to None - provide only if you want to
             override the value from the init.
 
+        rank_explained_variance : float
+            Parameter that controls the rank of V in fitting HAVOK DMD by indicating the percentage of
+            cumulative explained variance that should be explained by the columns of V. Defaults to None -
+            provide only if you want to overried the value from the init.
+
         lamb : float
             Regularization parameter for ridge regression. Defaults to None - provide only if you want to
             override the value from the init.
@@ -340,7 +376,7 @@ class DMD:
         # compute hankel
         self.compute_hankel(data, n_delays, delay_interval)
         self.compute_svd()
-        self.compute_havok_dmd(rank, rank_thresh, lamb)
+        self.compute_havok_dmd(rank, rank_thresh, rank_explained_variance, lamb)
 
     def predict(
         self,
