@@ -24,6 +24,8 @@ def embed_signal_torch(data, n_delays, delay_interval=1):
         The number of time steps between each delay in the delay embedding. Defaults
         to 1 time step.
     """
+    if isinstance(data, np.ndarray):
+        data = torch.from_numpy(data)
     device = data.device
 
     # initialize the embedding
@@ -31,11 +33,17 @@ def embed_signal_torch(data, n_delays, delay_interval=1):
         embedding = torch.zeros((data.shape[0], data.shape[1] - (n_delays - 1)*delay_interval, data.shape[2]*n_delays)).to(device)
     else:
         embedding = torch.zeros((data.shape[0] - (n_delays - 1)*delay_interval, data.shape[1]*n_delays)).to(device)
+    
     for d in range(n_delays):
+        index = (n_delays - 1 - d)*delay_interval
+        ddelay = d*delay_interval
+
         if data.ndim == 3:
-            embedding[:,:, d*data.shape[2]:(d + 1)*data.shape[2]] = data[:,(n_delays - 1 - d)*delay_interval:data.shape[1] - d*delay_interval]
+            ddata = d*data.shape[2]
+            embedding[:,:, ddata: ddata + data.shape[2]] = data[:,index:data.shape[1] - ddelay]
         else:
-            embedding[:, d*data.shape[1]:(d + 1)*data.shape[1]] = data[(n_delays - 1 - d)*delay_interval:data.shape[0] - d*delay_interval]
+            ddata = d*data.shape[1]
+            embedding[:, ddata:ddata + data.shape[1]] = data[index:data.shape[0] - ddelay]
     
     return embedding
 
@@ -259,7 +267,7 @@ class DMD:
             self.rank = len(self.S)
 
         if self.rank > self.H.shape[-1]:
-            raise ValueError(f"Provided rank {self.rank} cannot be larger than the number of columns in H {self.H.shape[-1]} ")
+            self.rank = self.H.shape[-1]
         
         # reshape for leastsquares
         if self.ntrials > 1:

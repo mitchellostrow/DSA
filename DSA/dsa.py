@@ -19,8 +19,10 @@ class DSA:
                 iters = 200,
                 score_method: Literal["angular", "euclidean"] = "angular",
                 lr = 0.01,
+                zero_pad = True,
                 device = 'cpu',
-                verbose = False):
+                verbose = False,
+                threaded=0):
         """
         Parameters
         __________
@@ -35,23 +37,36 @@ class DSA:
             * If Y is a single matrix, all matrices in X are compared to Y
             * If Y is a list, all matrices in X are compared to all matrices in Y
         
-        n_delays : int
+        DMD parameters: 
+
+        n_delays : int or list or tuple/list: (int,int), (list,list),(list,int),(int,list)
             number of delays to use in constructing the Hankel matrix
         
-        delay_interval : int
+        delay_interval : int or list or tuple/list: (int,int), (list,list),(list,int),(int,list)
             interval between samples taken in constructing Hankel matrix
 
-        rank : int
+        rank : int or list or tuple/list: (int,int), (list,list),(list,int),(int,list)
             rank of DMD matrix fit in reduced-rank regression
         
-        rank_thresh : float
+        rank_thresh : float or list or tuple/list: (float,float), (list,list),(list,float),(float,list)
             Parameter that controls the rank of V in fitting HAVOK DMD by dictating a threshold
             of singular values to use. Explicitly, the rank of V will be the number of singular
             values greater than rank_thresh. Defaults to None.
         
-        lamb : float
+        lamb : float or list or tuple: (float,float), (list,list),(list,float),(float,list)
             L-1 regularization parameter in DMD fit
         
+        NOTE: for all of these above, they can be single values or lists or tuples,
+            depending on the corresponding dimensions of the data
+            If at least one of X and Y are lists, then if they are a single value
+                it will default to the rank of all DMD matrices. 
+            If they are (int,int), then they will correspond to an individual dmd matrix
+                OR to X and Y respectively across all matrices
+            If it is (list,list), then each element will correspond to an individual
+                dmd matrix indexed at the same position
+
+        SimDist parameters:
+
         iters : int
             number of optimization iterations in Procrustes over vector fields
         
@@ -61,11 +76,19 @@ class DSA:
         lr : float
             learning rate of the Procrustes over vector fields optimization
         
+        zero_pad : bool
+            whether or not to zero-pad if the dimensions are different
+
         device : 'cpu' or 'cuda' or int
             hardware to use in both DMD and PoVF
         
         verbose : bool
             whether or not print when sections of the analysis is completed
+        
+        threaded : int
+            how many threads to use in multiprocessing. If zero, doesn't use multiprocessing
+
+      
         """
         self.X = X
         self.Y = Y
@@ -78,24 +101,35 @@ class DSA:
         else:
             self.data = [self.X, self.Y]
 
-        self.n_delays = n_delays
-        self.delay_interval = delay_interval
-        self.rank = rank
-        self.rank_thresh = rank_thresh
-        self.lamb = lamb
+        self.n_delays = self.broadcast_params(n_delays)
+        self.delay_interval = self.broadcast_params(delay_interval)
+        self.rank = self.broadcast_params(rank)
+        self.rank_thresh = self.broadcast_params(rank_thresh)
+        self.lamb = self.broadcast_params(lamb)
         self.iters = iters
         self.score_method = score_method
         self.lr = lr
         self.device = device
-        self.verbose = verbose
-
+        self.verbose = verbose    
+        self.zero_pad = zero_pad            
+       
         #get a list of all DMDs here
-        self.dmds = [[DMD(Xi,n_delays,delay_interval,rank,rank_thresh, lamb,device,verbose) for Xi in dat] for dat in self.data]
+        self.dmds = [[DMD(Xi,
+                self.n_delays[i][j],
+                self.delay_interval[i][j],
+                self.rank[i][j],
+                self.rank_thresh[i][j], 
+                self.lamb[i][j],
+                self.device,
+                self.verbose) for j,Xi in enumerate(dat)] for i,dat in enumerate(self.data)]
         
         self.simdist = SimilarityTransformDist(iters,score_method,lr,device,verbose)
 
     def check_method(self):
-        tensor_or_np = lambda x: isinstance(x,np.ndarray) or isinstance(x,torch.Tensor)
+        '''
+        helper function to identify what type of dsa we're running
+        '''
+        tensor_or_np = lambda x: isinstance(x,(np.ndarray,torch.Tensor))
 
         if isinstance(self.X,list):
             if self.Y is None:
@@ -120,6 +154,35 @@ class DSA:
                 raise ValueError('unknown type of Y')
         else:
             raise ValueError('unknown type of X')
+
+    def broadcast_params(self,param):
+        '''
+        aligns the dimensionality of the parameters with the data so it's one-to-one
+        '''
+        out = []
+        if isinstance(param,(int,float)) or param is None: #self.X has already been mapped to [self.X]
+            out.append([param] * len(self.X))
+            if self.Y is not None:
+                out.append([param] * len(self.Y))
+        elif isinstance(param,(tuple,list,np.ndarray)):
+            if self.method == 'self-pairwise' and len(param) >= len(self.X):
+                out = [param]
+            else:
+                assert len(param) <= 2 #only 2 elements max
+
+                #if the inner terms are singly valued, we broadcast, otherwise needs to be the same dimensions
+                for i,data in enumerate([self.X,self.Y]):
+                    if data is None:
+                        continue
+
+                    if isinstance(param[i],(int,float)):
+                        out.append([param[i]] * len(data))
+                    elif isinstance(param[i],(list,np.ndarray,tuple)):
+                        assert len(param[i]) >= len(data)
+                        out.append(param[i][:len(data)]) 
+        else:
+            raise ValueError("unknown type entered for parameter")
+        return out
         
     def fit_dmds(self,
                  X=None,
@@ -149,7 +212,7 @@ class DSA:
                 data.append([Y])
     
         dmds = [[DMD(Xi,n_delays,delay_interval,rank,lamb,self.device) for Xi in dat] for dat in data]
-            
+        #TODO: parallelization
         for dmd_sets in dmds:
             for dmd in dmd_sets:
                 dmd.fit()
@@ -209,9 +272,12 @@ class DSA:
                         continue
                     if j > i:
                         continue
-                    sims[i,j] = sims[j,i] = self.simdist.fit_score(dmd1.A_v,dmd2.A_v,iters,lr,score_method)
+                    sims[i,j] = sims[j,i] = self.simdist.fit_score(dmd1.A_v,dmd2.A_v,iters,lr,score_method,zero_pad=self.zero_pad)
                 else:
-                    sims[i,j] = self.simdist.fit_score(dmd1.A_v,dmd2.A_v,iters,lr,score_method)
+                    sims[i,j] = self.simdist.fit_score(dmd1.A_v,dmd2.A_v,iters,lr,score_method,zero_pad=self.zero_pad)
+        
+        if self.method == 'default':
+            return sims[0,0]
 
         return sims
 

@@ -4,6 +4,21 @@ import torch.optim as optim
 from typing import Literal
 import numpy as np
 import torch.nn.utils.parametrize as parametrize
+from scipy.stats import special_ortho_group
+
+def pad_zeros(A,B,device):
+
+    with torch.no_grad():
+        dim = max(A.shape[0],B.shape[0])
+        A1 = torch.zeros((dim,dim)).float()
+        A1[:A.shape[0],:A.shape[1]] += A
+        A = A1.float().to(device)
+
+        B1 = torch.zeros((dim,dim)).float()
+        B1[:B.shape[0],:B.shape[1]] += B
+        B = B1.float().to(device)
+
+    return A,B
 
 class LearnableOrthogonalSimilarityTransform(nn.Module):
     """
@@ -18,7 +33,7 @@ class LearnableOrthogonalSimilarityTransform(nn.Module):
         """
         super(LearnableOrthogonalSimilarityTransform, self).__init__()
         #initialize orthogonal matrix as identity
-        self.C = nn.Parameter(torch.eye(n))
+        self.C = nn.Parameter(torch.eye(n).float())
         
     def forward(self, B):
         return self.C @ B @ self.C.transpose(-1, -2)
@@ -94,7 +109,7 @@ class SimilarityTransformDist:
             A, 
             B, 
             iters = None, 
-            lr = 0.01, 
+            lr = None, 
             zero_pad = True,
             ):
         """
@@ -121,21 +136,14 @@ class SimilarityTransformDist:
         assert B.shape[0] == B.shape[1]
         assert A.shape[0] == B.shape[1] or zero_pad
 
-        if zero_pad:
-            with torch.no_grad():
-                dim = max(A.shape[0],B.shape[0])
-                A1 = torch.zeros((dim,dim))
-                A1 += A
-                A = A1
-
-                B1 = torch.zeros((dim,dim))
-                B1 += B
-                B = B1
-
         if isinstance(A,np.ndarray):
-            self.A = torch.from_numpy(A).float().to(self.device)
+            A = torch.from_numpy(A).float().to(self.device)
         if isinstance(B,np.ndarray):
-            self.B = torch.from_numpy(B).float().to(self.device)
+            B = torch.from_numpy(B).float().to(self.device)
+
+        if zero_pad and A.shape != B.shape: #no point zero-padding if already equal
+           A,B = pad_zeros(A,B,self.device)
+        self.A,self.B = A,B
         n = A.shape[0]
         lr = self.lr if lr is None else lr
         iters = self.iters if iters is None else iters
@@ -145,7 +153,7 @@ class SimilarityTransformDist:
         parametrize.register_parametrization(ortho_sim_net, "C", Skew())
         parametrize.register_parametrization(ortho_sim_net, "C", CayleyMap(n,self.device))
         
-        simdist_loss = nn.MSELoss(reduction = 'mean')
+        simdist_loss = nn.MSELoss(reduction = 'sum')
 
         optimizer = optim.Adam(ortho_sim_net.parameters(), lr=lr)
 
@@ -193,6 +201,7 @@ class SimilarityTransformDist:
         assert A.shape == self.C_star.shape
         assert B.shape == self.C_star.shape
         score_method = self.score_method if score_method is None else score_method
+        
         with torch.no_grad():
             if not isinstance(A,torch.Tensor):
                 A = torch.from_numpy(A).float().to(self.device)
@@ -201,20 +210,21 @@ class SimilarityTransformDist:
             C = self.C_star.to(self.device)
 
         if score_method == 'angular':    
-            num = torch.trace(A @ C @ B.T @ C.T)
+            num = torch.trace(A @ C @ B.T @ C.T) 
             den = torch.norm(A,p = 'fro')*torch.norm(B,p = 'fro')
             score = torch.arccos(num/den).cpu().numpy()
         else:
-            score = torch.norm(A - C @ B @ C.T,p='fro').cpu().numpy()
+            score = torch.norm(A - C @ B @ C.T,p='fro').cpu().numpy() / A.numpy().size
     
         return score
     
     def fit_score(self,
-                  A,
-                  B,
-                  iters = None, 
-                  lr = 0.01,
-                  score_method = None):
+                A,
+                B,
+                iters = None, 
+                lr = None,
+                score_method = None,
+                zero_pad = True):
         """
         for efficiency, computes the optimal matrix and returns the score 
 
@@ -230,7 +240,8 @@ class SimilarityTransformDist:
             learning rate, if None then resorts to saved self.lr
         score_method : {'angular','euclidean'} or None
             overwrites parameter in the class
-        
+        zero_pad : bool
+            if True, then the smaller matrix will be zero padded so its the same size
         Returns
         _______
 
@@ -239,7 +250,12 @@ class SimilarityTransformDist:
             
         """
         score_method = self.score_method if score_method is None else score_method
-        self.fit(A, B,iters,lr)
-        score_star = self.score(A,B,score_method)
+        
+        if zero_pad and A.shape != B.shape: 
+           A,B = pad_zeros(A,B,self.device)
+       
+        self.fit(A, B,iters,lr,zero_pad)
+        score_star = self.score(self.A,self.B,score_method=score_method)
 
         return score_star.item()
+
