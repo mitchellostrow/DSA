@@ -29,11 +29,17 @@ pip install -e .
 
 ## Brief Tutorial
 
-The main object in the package is `DSA`, which hooks together the `DMD` and `SimilarityTransformDist` (called Procrustes Analysis over Vector Fields in the paper) objects. We designed an API that should be easy to use them in conjunction (`DSA`) with a variety of datatypes for a range of analysis cases:
+The central object in the package is `DSA`, which links together the `DMD` and `SimilarityTransformDist` (called Procrustes Analysis over Vector Fields in the paper) objects. We designed an API that should be easy to use them in conjunction (`DSA`) with a variety of datatypes for a range of analysis cases:
  * Standard: Comparing two data matrices X, Y (can be passed in as numpy arrays or torch Tensors)
  * Pairwise: Pass in a list of data matrices X, which can be compared all-to-all
  * Disjoint Pairwise: Pass in two lists of data matrices, X, Y, which are compared all-to-all in a bipartite fashion
  * One-to-All: Pass in a list of data matrices X and a single matrix Y. All of X are compared to Y.
+
+Depending on the structure of the data, you can also pass in hyperparamters that vary:
+* If your parameters are a single variable, it will be broadcast to all data matrices
+* If your parameters are a list of two variables `(a,b)`, each will be broadcast to all data matrices in X and Y, respectively
+* If your parameters are a list of two lists `([a,b],[c,d])`, they will be mapped onto to all data matrices in X and Y with corresponding indices. Will throw an error if there aren't enough hyperparamters to match the data.
+* If your parameters are a combination of the previous two (e.g. `(a,[b,c])`), the broadcasting behaviors will be combined accordingly.
 
 Our code also uses an API similar to `scikit-learn` in that all the relevant computation is enclosed in the `.fit()`, `.score()`, and `.fit_score()` style functions:
 ```
@@ -45,3 +51,4 @@ Simple as that! The data matrices can be of shape `(trials,time,channels)` or `(
 
 Note that `DSA` performs multiple fits to the data: one `DMD` matrix per data matrix, and then one `SimDistTransform` similarity per pair of data matrices. When you call `score` after `fit_score`, it will only recompute the `SimDistTransform`s. If you wish to recompute the DMDs, call `.fit_dmds()`. The Procrustes Analysis over Vector Fields metric does not have a closed form solution so it may be worth playing around with its optimization parameters.
 
+DSA has CUDA capability via pytorch, which is highly recommended for large datasets. 
