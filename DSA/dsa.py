@@ -15,6 +15,7 @@ class DSA:
                 delay_interval=1,
                 rank=None,
                 rank_thresh=None,
+                rank_explained_variance = None,
                 lamb = 0.0,
                 iters = 200,
                 score_method: Literal["angular", "euclidean"] = "angular",
@@ -53,7 +54,11 @@ class DSA:
             of singular values to use. Explicitly, the rank of V will be the number of singular
             values greater than rank_thresh. Defaults to None.
         
-        lamb : float or list or tuple: (float,float), (list,list),(list,float),(float,list)
+        rank_explained_variance : float or list or tuple: (float,float), (list,list),(list,float),(float,list)
+            Parameter that controls the rank of V in fitting HAVOK DMD by indicating the percentage of
+            cumulative explained variance that should be explained by the columns of V. Defaults to None.
+        
+        lamb : float
             L-1 regularization parameter in DMD fit
         
         NOTE: for all of these above, they can be single values or lists or tuples,
@@ -105,7 +110,9 @@ class DSA:
         self.delay_interval = self.broadcast_params(delay_interval)
         self.rank = self.broadcast_params(rank)
         self.rank_thresh = self.broadcast_params(rank_thresh)
+        self.rank_explained_variance = self.broadcast_params(rank_explained_variance)
         self.lamb = self.broadcast_params(lamb)
+
         self.iters = iters
         self.score_method = score_method
         self.lr = lr
@@ -119,10 +126,11 @@ class DSA:
                 self.delay_interval[i][j],
                 self.rank[i][j],
                 self.rank_thresh[i][j], 
+                self.rank_explained_variance[i][j],
                 self.lamb[i][j],
                 self.device,
                 self.verbose) for j,Xi in enumerate(dat)] for i,dat in enumerate(self.data)]
-        
+
         self.simdist = SimilarityTransformDist(iters,score_method,lr,device,verbose)
 
     def check_method(self):
@@ -190,9 +198,10 @@ class DSA:
                  n_delays=None,
                  delay_interval=None,
                  rank=None,
-                 lamb = None):
+                 lamb = None,
+                 rank_explained_variance=None):
         """
-        Recomputes only the DMDs. This will not compare, that will need to be done with the full procedure
+        Recomputes only the DMDs with a single set of hyperparameters. This will not compare, that will need to be done with the full procedure
         """
         X = self.X if X is None else X
         Y = self.Y if Y is None else Y
@@ -212,7 +221,7 @@ class DSA:
                 data.append([Y])
     
         dmds = [[DMD(Xi,n_delays,delay_interval,rank,lamb,self.device) for Xi in dat] for dat in data]
-        #TODO: parallelization
+            
         for dmd_sets in dmds:
             for dmd in dmd_sets:
                 dmd.fit()
@@ -280,4 +289,3 @@ class DSA:
             return sims[0,0]
 
         return sims
-
