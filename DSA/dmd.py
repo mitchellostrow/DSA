@@ -216,29 +216,27 @@ class DMD:
         # compute the SVD
         U, S, Vh = torch.linalg.svd(H.T, full_matrices=False)
 
-        # print("HERE")
-        
         # # update attributes
-        # V = Vh.T
-        # self.U = U
-        # self.S = S
-        # self.V = V
+        V = Vh.T
+        self.U = U
+        self.S = S
+        self.V = V
 
-        # # construct the singuar value matrix and its inverse
-        # dim = self.n_delays * self.n
-        # s = len(S)
-        # self.S_mat = torch.zeros(dim, dim).to(self.device)
-        # self.S_mat_inv = torch.zeros(dim, dim).to(self.device)
-        # self.S_mat[np.arange(s), np.arange(s)] = S
-        # self.S_mat_inv[np.arange(s), np.arange(s)] = 1/S
+        # construct the singuar value matrix and its inverse
+        dim = self.n_delays * self.n
+        s = len(S)
+        self.S_mat = torch.zeros(dim, dim).to(self.device)
+        self.S_mat_inv = torch.zeros(dim, dim).to(self.device)
+        self.S_mat[np.arange(s), np.arange(s)] = S
+        self.S_mat_inv[np.arange(s), np.arange(s)] = 1/S
 
-        # # compute explained variance
-        # exp_variance_inds = self.S**2/((self.S**2).sum())
-        # cumulative_explained = torch.cumsum(exp_variance_inds, 0)
-        # self.cumulative_explained_variance = cumulative_explained
+        # compute explained variance
+        exp_variance_inds = self.S**2/((self.S**2).sum())
+        cumulative_explained = torch.cumsum(exp_variance_inds, 0)
+        self.cumulative_explained_variance = cumulative_explained
         
-        # if self.verbose:
-        #     print("SVD complete!")
+        if self.verbose:
+            print("SVD complete!")
     
     def compute_havok_dmd(
             self,
