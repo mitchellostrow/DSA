@@ -5,10 +5,10 @@ from scipy.stats import ortho_group
 import torch
 TOL = 1e-2
 
-@pytest.mark.parametrize('t', [100])
-@pytest.mark.parametrize('c', [10])
-@pytest.mark.parametrize('n_delays', [20])
 @pytest.mark.parametrize('delay_interval', [1,2])
+@pytest.mark.parametrize('n_delays', [20])
+@pytest.mark.parametrize('c', [10])
+@pytest.mark.parametrize('t', [100])
 @pytest.mark.parametrize('seed', [21])
 def test_embed_3dvs2d(seed,t,c,n_delays,delay_interval):
     #test to make sure 3d and 2d are effectively doing the same thing
@@ -21,9 +21,9 @@ def test_embed_3dvs2d(seed,t,c,n_delays,delay_interval):
     assert np.allclose(embed1[1],embed2s[1],atol=TOL)
     assert np.allclose(embed1[2],embed2s[2],atol=TOL)
 
-@pytest.mark.parametrize('n', [50])
-@pytest.mark.parametrize('t', [100])
 @pytest.mark.parametrize('c', [10])
+@pytest.mark.parametrize('t', [100])
+@pytest.mark.parametrize('n', [50])
 @pytest.mark.parametrize('seed', [21])
 def test_embed_1delay(seed,n,t,c):
     rng = np.random.default_rng(seed) 
@@ -36,12 +36,12 @@ def test_embed_1delay(seed,n,t,c):
     assert np.allclose(dmd.H,data,atol=TOL)
     assert np.allclose(embed1,data[0],atol=TOL)
 
-@pytest.mark.parametrize('n', [50])
-@pytest.mark.parametrize('t', [500])
-@pytest.mark.parametrize('c', [10])
-@pytest.mark.parametrize('n_delays', [20])
-@pytest.mark.parametrize('seed', [21])
 @pytest.mark.parametrize('rank', [10,50,250])
+@pytest.mark.parametrize('n_delays', [1,20])
+@pytest.mark.parametrize('c', [10])
+@pytest.mark.parametrize('t', [500])
+@pytest.mark.parametrize('n', [50])
+@pytest.mark.parametrize('seed', [21])
 def test_dmd_rank(seed,n,t,c,n_delays,rank):
     rng = np.random.default_rng(seed) 
     X = rng.random((n,t,c))
@@ -50,9 +50,9 @@ def test_dmd_rank(seed,n,t,c,n_delays,rank):
     rank = min(rank,n_delays*c)
     assert dmd.A_v.shape == (rank,rank)
 
-@pytest.mark.parametrize('c', [5])
-@pytest.mark.parametrize('t', [1000])
 @pytest.mark.parametrize('tau', [0.01])
+@pytest.mark.parametrize('t', [1000])
+@pytest.mark.parametrize('c', [5])
 @pytest.mark.parametrize('seed', [21])
 def test_dmd_2d(seed,c,t,tau): 
     rng = np.random.default_rng(seed)
@@ -70,7 +70,7 @@ def test_dmd_2d(seed,c,t,tau):
 @pytest.mark.parametrize('n', [500])
 @pytest.mark.parametrize('t', [1000])
 @pytest.mark.parametrize('c', [3])
-@pytest.mark.parametrize('tau', [0.05])
+@pytest.mark.parametrize('tau', [0.01])
 @pytest.mark.parametrize('seed', [21])
 def test_dmd_3d(seed,n,t,c,tau):
     rng = np.random.default_rng(seed)

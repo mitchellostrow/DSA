@@ -215,30 +215,28 @@ class DMD:
         
         # compute the SVD
         U, S, Vh = torch.linalg.svd(H.T, full_matrices=False)
-
-        # print("HERE")
         
-        # # update attributes
-        # V = Vh.T
-        # self.U = U
-        # self.S = S
-        # self.V = V
+        # update attributes
+        V = Vh.T
+        self.U = U
+        self.S = S
+        self.V = V
 
-        # # construct the singuar value matrix and its inverse
-        # dim = self.n_delays * self.n
-        # s = len(S)
-        # self.S_mat = torch.zeros(dim, dim).to(self.device)
-        # self.S_mat_inv = torch.zeros(dim, dim).to(self.device)
-        # self.S_mat[np.arange(s), np.arange(s)] = S
-        # self.S_mat_inv[np.arange(s), np.arange(s)] = 1/S
+        # construct the singuar value matrix and its inverse
+        dim = self.n_delays * self.n
+        s = len(S)
+        self.S_mat = torch.zeros(dim, dim).to(self.device)
+        self.S_mat_inv = torch.zeros(dim, dim).to(self.device)
+        self.S_mat[np.arange(s), np.arange(s)] = S
+        self.S_mat_inv[np.arange(s), np.arange(s)] = 1 / S
 
-        # # compute explained variance
-        # exp_variance_inds = self.S**2/((self.S**2).sum())
-        # cumulative_explained = torch.cumsum(exp_variance_inds, 0)
-        # self.cumulative_explained_variance = cumulative_explained
+        # compute explained variance
+        exp_variance_inds = self.S**2 / ((self.S**2).sum())
+        cumulative_explained = torch.cumsum(exp_variance_inds, 0)
+        self.cumulative_explained_variance = cumulative_explained
         
-        # if self.verbose:
-        #     print("SVD complete!")
+        if self.verbose:
+            print("SVD complete!")
     
     def compute_havok_dmd(
             self,
@@ -281,7 +279,7 @@ class DMD:
         self.rank_explained_variance = self.rank_explained_variance if rank_explained_variance is None else rank_explained_variance
         self.lamb = self.lamb if lamb is None else lamb
 
-        none_vars = (rank is None) + (rank_thresh is None) + (rank_explained_variance is None)
+        none_vars = (self.rank is None) + (self.rank_thresh is None) + (self.rank_explained_variance is None)
         if none_vars < 2:
             raise ValueError("More than one value was provided between rank, rank_thresh, and rank_explained_variance. Please provide only one of these, and ensure the others are None!")
         elif none_vars == 3:
@@ -318,7 +316,6 @@ class DMD:
                 self.rank = len(self.S)
             else:
                 self.rank = torch.argmax(torch.arange(len(self.S), 0, -1).to(self.device)*(self.S < self.rank_thresh))
-
         A_v = (torch.linalg.inv(Vt_minus[:, :self.rank].T @ Vt_minus[:, :self.rank] + self.lamb*torch.eye(self.rank).to(self.device))@ Vt_minus[:, :self.rank].T@ Vt_plus[:, :self.rank]).T
         self.A_v = A_v
         self.A_havok_dmd = self.U @ self.S_mat[:self.U.shape[1], :self.rank] @ self.A_v @ self.S_mat_inv[:self.rank, :self.U.shape[1]] @ self.U.T
