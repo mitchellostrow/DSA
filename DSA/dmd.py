@@ -276,7 +276,7 @@ class DMD:
 
         # if an argument was provided, overwrite the stored rank information
         none_vars = (rank is None) + (rank_thresh is None) + (rank_explained_variance is None)
-        if none_vars > 0:
+        if none_vars != 3:
             self.rank = None
             self.rank_thresh = None
             self.rank_explained_variance = None
@@ -338,6 +338,7 @@ class DMD:
             lamb=None,
             device=None,
             verbose=None,
+            send_to_cpu=False
         ):
         """
         Parameters
@@ -389,22 +390,28 @@ class DMD:
         verbose: bool
             If True, print statements will be provided about the progress of the fitting procedure. 
             Defaults to None - provide only if you want to override the value from the init.
+        
+        send_to_cpu: bool
+            If True, will send all tensors in the object back to the cpu after everything is computed.
+            This is implemented to prevent gpu memory overload when computing multiple DMDs.
         """
         # if parameters are provided, overwrite them from the init
         self.device = self.device if device is None else device
         self.verbose = self.verbose if verbose is None else verbose
     
-        # compute hankel
         self.compute_hankel(data, n_delays, delay_interval)
         self.compute_svd()
         self.compute_havok_dmd(rank, rank_thresh, rank_explained_variance, lamb)
+        if send_to_cpu:
+            self.all_to_device('cpu') #send back to the gpu to save memory
 
     def predict(
         self,
         test_data=None,
         reseed=None,
         full_return=False
-    ):
+        ):
+
         # initialize test_data
         if test_data is None:
             test_data = self.data
@@ -436,3 +443,8 @@ class DMD:
             return pred_data, H_test_havok_dmd, H_test
         else:
             return pred_data
+    
+    def all_to_device(self,device='cpu'):
+        for k,v in self.__dict__.items():
+            if isinstance(v, torch.Tensor):
+                self.__dict__[k] = v.to(device)

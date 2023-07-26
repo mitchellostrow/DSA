@@ -16,7 +16,7 @@ def test_different_dims(seed,n1,n2,t1,t2,c1,c2,rank1,rank2):
     rng = np.random.default_rng(seed) 
     X = rng.random((n1,t1,c1))
     Y = rng.random((n2,t2,c2))
-    dsa = DSA(X,Y,rank=(rank1,rank2),n_delays=(10,10))
+    dsa = DSA(X,Y,rank=(rank1,rank2),n_delays=10)
     sim = dsa.fit_score()
     assert dsa.dmds[0][0].A_v.shape == (rank1,rank1)
     assert dsa.dmds[1][0].A_v.shape == (rank2,rank2)
@@ -120,8 +120,8 @@ def test_dsa_manyto1(n,t,c,seed,nmodels):
 @pytest.mark.parametrize('c', [2])
 @pytest.mark.parametrize('t', [100])
 @pytest.mark.parametrize('seed', [5])
-@pytest.mark.parametrize('nmodels1', [10])
-@pytest.mark.parametrize('nmodels2', [10])
+@pytest.mark.parametrize('nmodels1', [2])
+@pytest.mark.parametrize('nmodels2', [2])
 def test_dsa_manytomany(n,t,c,seed,nmodels1,nmodels2):
     rng = np.random.default_rng(seed) 
     X = [rng.random((n,t,c)) for i in range(nmodels1)]

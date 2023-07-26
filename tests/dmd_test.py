@@ -85,3 +85,17 @@ def test_dmd_3d(seed,n,t,c,tau):
     dmd = DMD(data,1)
     dmd.fit()
     assert np.linalg.norm(dmd.A_v.flatten()-A.flatten()) < 1e-1
+
+
+@pytest.mark.parametrize('c', [10])
+@pytest.mark.parametrize('t', [100])
+@pytest.mark.parametrize('n', [50])
+@pytest.mark.parametrize('seed', [21])
+def test_to_cpu(seed,n,t,c):
+    rng = np.random.default_rng(seed) 
+    X = rng.random((n,t,c))
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    dmd = DMD(X,1,device=device)
+    dmd.fit(send_to_cpu=True)
+    assert dmd.A_v.device.type == 'cpu'
+    assert dmd.H.device.type == 'cpu'

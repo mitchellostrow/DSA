@@ -17,7 +17,8 @@ class DSA:
                 rank_thresh=None,
                 rank_explained_variance = None,
                 lamb = 0.0,
-                iters = 200,
+                send_to_cpu = True,
+                iters = 1000,
                 score_method: Literal["angular", "euclidean"] = "angular",
                 lr = 0.01,
                 zero_pad = True,
@@ -61,6 +62,10 @@ class DSA:
         lamb : float
             L-1 regularization parameter in DMD fit
         
+        send_to_cpu: bool
+            If True, will send all tensors in the object back to the cpu after everything is computed.
+            This is implemented to prevent gpu memory overload when computing multiple DMDs.
+
         NOTE: for all of these above, they can be single values or lists or tuples,
             depending on the corresponding dimensions of the data
             If at least one of X and Y are lists, then if they are a single value
@@ -112,7 +117,7 @@ class DSA:
         self.rank_thresh = self.broadcast_params(rank_thresh)
         self.rank_explained_variance = self.broadcast_params(rank_explained_variance)
         self.lamb = self.broadcast_params(lamb)
-
+        self.send_to_cpu = send_to_cpu
         self.iters = iters
         self.score_method = score_method
         self.lr = lr
@@ -198,8 +203,10 @@ class DSA:
                  n_delays=None,
                  delay_interval=None,
                  rank=None,
+                 rank_thresh = None,
+                 rank_explained_variance=None,
                  lamb = None,
-                 rank_explained_variance=None):
+                ):
         """
         Recomputes only the DMDs with a single set of hyperparameters. This will not compare, that will need to be done with the full procedure
         """
@@ -220,11 +227,13 @@ class DSA:
             else:
                 data.append([Y])
     
-        dmds = [[DMD(Xi,n_delays,delay_interval,rank,lamb,self.device) for Xi in dat] for dat in data]
+        dmds = [[DMD(Xi,n_delays,delay_interval,
+                     rank,rank_thresh,rank_explained_variance,
+                     lamb,self.device) for Xi in dat] for dat in data]
             
         for dmd_sets in dmds:
             for dmd in dmd_sets:
-                dmd.fit()
+                dmd.fit(send_to_cpu=self.send_to_cpu)
 
         return dmds
 
@@ -243,7 +252,7 @@ class DSA:
         """
         for dmd_sets in self.dmds:
             for dmd in dmd_sets:
-                dmd.fit()
+                dmd.fit(send_to_cpu=self.send_to_cpu)
 
         return self.score()
     
