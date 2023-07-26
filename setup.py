@@ -12,7 +12,7 @@ setuptools.setup(
     packages=setuptools.find_packages(),
     install_requires=[
         'numpy>=1.24.0',
-        'torch>=2.0.0',
+        'torch>=1.3.0',
     ],
     extras_require={
         'dev': [

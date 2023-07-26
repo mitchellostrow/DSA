@@ -177,8 +177,8 @@ class SimilarityTransformDist:
         # scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.999)
 
         self.losses = []
-        A /= np.linalg.norm(A)
-        B /= np.linalg.norm(B)
+        A /= torch.linalg.norm(A)
+        B /= torch.linalg.norm(B)
         for _ in range(iters):
             # Zero the gradients of the optimizer.
             optimizer.zero_grad()      
