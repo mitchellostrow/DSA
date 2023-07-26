@@ -273,6 +273,13 @@ class DMD:
         """
         if self.verbose:
             print("Computing least squares fits to HAVOK DMD ...")
+
+        # if an argument was provided, overwrite the stored rank information
+        none_vars = (rank is None) + (rank_thresh is None) + (rank_explained_variance is None)
+        if none_vars > 0:
+            self.rank = None
+            self.rank_thresh = None
+            self.rank_explained_variance = None
         
         self.rank = self.rank if rank is None else rank
         self.rank_thresh = self.rank_thresh if rank_thresh is None else rank_thresh
@@ -285,9 +292,6 @@ class DMD:
         elif none_vars == 3:
            self.rank = len(self.S)
 
-        if self.rank > self.H.shape[-1]:
-            self.rank = self.H.shape[-1]
-        
         if rank_thresh is not None:
             if self.S[-1] > rank_thresh:
                 self.rank = len(self.S)
@@ -295,10 +299,10 @@ class DMD:
                 self.rank = torch.argmax(torch.arange(len(self.S), 0, -1).to(self.device)*(self.S < rank_thresh))
 
         if rank_explained_variance is not None:
-            if self.use_torch:
-                self.rank = int(torch.argmax((self.cumulative_explained_variance > rank_explained_variance).type(torch.int)).cpu().numpy())
-            else:
-                self.rank = int(np.argmax((self.cumulative_explained_variance > rank_explained_variance)))
+            self.rank = int(torch.argmax((self.cumulative_explained_variance > rank_explained_variance).type(torch.int)).cpu().numpy())
+
+        if self.rank > self.H.shape[-1]:
+            self.rank = self.H.shape[-1]
 
         # reshape for leastsquares
         if self.ntrials > 1:
