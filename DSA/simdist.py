@@ -4,7 +4,6 @@ import torch.optim as optim
 from typing import Literal
 import numpy as np
 import torch.nn.utils.parametrize as parametrize
-from scipy.stats import special_ortho_group
 
 def pad_zeros(A,B,device):
 
@@ -155,12 +154,15 @@ class SimilarityTransformDist:
         assert A.shape[0] == B.shape[1] or zero_pad
 
         if isinstance(A,np.ndarray):
-            A = torch.from_numpy(A).float().to(self.device)
+            A = torch.from_numpy(A).float()
         if isinstance(B,np.ndarray):
-            B = torch.from_numpy(B).float().to(self.device)
-
+            B = torch.from_numpy(B).float()
+       
         if zero_pad and A.shape != B.shape: #no point zero-padding if already equal
            A,B = pad_zeros(A,B,self.device)
+           
+        A = A.to(self.device)
+        B = B.to(self.device)
         self.A,self.B = A,B
         n = A.shape[0]
         lr = self.lr if lr is None else lr
@@ -235,8 +237,13 @@ class SimilarityTransformDist:
             num = torch.trace(A @ C @ B.T @ C.T) 
             den = torch.norm(A,p = 'fro')*torch.norm(B,p = 'fro')
             score = torch.arccos(num/den).cpu().numpy()
+            if np.isnan(score): #around -1 and 1, we sometimes get NaNs due to arccos
+                if num/den < 0:
+                    score = np.pi
+                else:
+                    score = 0
         else:
-            score = torch.norm(A - C @ B @ C.T,p='fro').cpu().numpy() #/ A.numpy().size
+            score = torch.norm(A - C @ B @ C.T,p='fro').cpu().numpy().item() #/ A.numpy().size
     
         return score
     
@@ -279,5 +286,5 @@ class SimilarityTransformDist:
         self.fit(A, B,iters,lr,zero_pad)
         score_star = self.score(self.A,self.B,score_method=score_method)
 
-        return score_star.item()
+        return score_star
 

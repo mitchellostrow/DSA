@@ -146,9 +146,7 @@ class DMD:
         # check if the data is an np.ndarry - if so, convert it to Torch
         if isinstance(data, np.ndarray):
             data = torch.from_numpy(data)
-        # move the data to the appropriate device
-        self.data = data.to(self.device)
-
+        self.data = data
         # create attributes for the data dimensions
         if self.data.ndim == 3:
             self.ntrials = self.data.shape[0]
@@ -195,6 +193,7 @@ class DMD:
         self.data = self.data if data is None else self._init_data(data)
         self.n_delays = self.n_delays if n_delays is None else n_delays
         self.delay_interval = self.delay_interval if delay_interval is None else delay_interval
+        self.data = self.data.to(self.device)
 
         self.H = embed_signal_torch(self.data, self.n_delays, self.delay_interval)
 
@@ -212,7 +211,6 @@ class DMD:
             H = self.H.reshape(self.H.shape[0] * self.H.shape[1], self.H.shape[2])
         else:
             H = self.H
-        
         # compute the SVD
         U, S, Vh = torch.linalg.svd(H.T, full_matrices=False)
         
@@ -323,7 +321,7 @@ class DMD:
         A_v = (torch.linalg.inv(Vt_minus[:, :self.rank].T @ Vt_minus[:, :self.rank] + self.lamb*torch.eye(self.rank).to(self.device))@ Vt_minus[:, :self.rank].T@ Vt_plus[:, :self.rank]).T
         self.A_v = A_v
         self.A_havok_dmd = self.U @ self.S_mat[:self.U.shape[1], :self.rank] @ self.A_v @ self.S_mat_inv[:self.rank, :self.U.shape[1]] @ self.U.T
-
+        
         if self.verbose:
             print("Least squares complete! \n")
 
@@ -403,7 +401,7 @@ class DMD:
         self.compute_svd()
         self.compute_havok_dmd(rank, rank_thresh, rank_explained_variance, lamb)
         if send_to_cpu:
-            self.all_to_device('cpu') #send back to the gpu to save memory
+            self.all_to_device('cpu') #send back to the cpu to save memory
 
     def predict(
         self,
