@@ -1,7 +1,7 @@
 import pytest
 import numpy as np
 from DSA.simdist import SimilarityTransformDist,pad_zeros
-from scipy.stats import special_ortho_group
+from scipy.stats import special_ortho_group, ortho_group
 import torch
 from netrep.utils import whiten
 
@@ -13,17 +13,26 @@ SIMTOL = 1e-2
 @pytest.mark.parametrize('dtype',['numpy'])
 @pytest.mark.parametrize('score_method',['angular','euclidean'])
 @pytest.mark.parametrize('n', [10,50,100])
+@pytest.mark.parametrize('group',['O(n)','GL(n)','SO(n)'])
 @pytest.mark.parametrize('seed', [5])
-def test_simdist_convergent(seed,n,score_method,dtype,preserve_var,device):
+def test_simdist_convergent(seed,n,score_method,dtype,preserve_var,group,device):
     rng = np.random.default_rng(seed) 
     X = rng.random(size=(n,n))
+    if group == 'SO(n)':
+        Q = special_ortho_group(seed=rng,dim=n).rvs()
+        Y = Q @ X @ Q.T
+    elif group == 'O(n)':
+        Q = ortho_group(seed=rng,dim=n).rvs()
+        Y = Q @ X @ Q.T
+    elif group == 'GL(n)':
+        #draw random invertible matrix 
+        Q = rng.random(size=(n,n))
+        Y = Q @ X @ np.linalg.inv(Q)
 
-    Q = special_ortho_group(seed=rng,dim=n).rvs()
-    Y = Q @ X @ Q.T
     X,_ = whiten(X,0,preserve_variance=preserve_var)
     Y,_ = whiten(Y,0,preserve_variance=preserve_var)
     #excessive but we just want to see that it converges
-    sim = SimilarityTransformDist(lr=5e-3,iters=15000,score_method=score_method,device=device)
+    sim = SimilarityTransformDist(lr=1e-2,iters=5000,score_method=score_method,device=device,group=group)
     if dtype == 'torch':
         X = torch.tensor(X).float()
         Y = torch.tensor(Y).float()
