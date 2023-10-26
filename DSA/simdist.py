@@ -109,7 +109,7 @@ class SimilarityTransformDist:
                  lr = 0.01,
                  device = 'cpu',
                  verbose = False,
-                 group = "SO(n)"
+                 group = "O(n)"
                 ):
         """
         Parameters
@@ -199,19 +199,17 @@ class SimilarityTransformDist:
                                                                      verbose=self.verbose)
         if group == "O(n)":
             #permute the first row and column of B then rerun the optimization
-            B[[0, 1], :] = B[[1, 0], :]
-            B[:, [0, 1]] = B[:, [1, 0]]
+            P = torch.eye(B.shape[0])
+            P[[0, 1], :] = P[[1, 0], :]
             losses, C_star, sim_net = self.optimize_C(A,
-                                                    B,
+                                                    P @ B @ P.T,
                                                     lr,iters,
                                                     orthog=True,
                                                     verbose=self.verbose)
             if losses[-1] < self.losses[-1]:
                 self.losses = losses
-                self.C_star = C_star
+                self.C_star = C_star @ P
                 self.sim_net = sim_net
-                self.B = B
-            
         if group == "GL(n)":
             self.losses, self.C_star, self.sim_net = self.optimize_C(A,
                                                                 B,
@@ -294,7 +292,8 @@ class SimilarityTransformDist:
             Cinv = C.T
         elif group in {"GL(n)"}:
             Cinv = torch.linalg.inv(C)
-
+        else:
+            raise AssertionError("Need proper group name")
         if score_method == 'angular':    
             num = torch.trace(A.T @ C @ B @ Cinv) 
             den = torch.norm(A,p = 'fro')*torch.norm(B,p = 'fro')

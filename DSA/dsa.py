@@ -21,7 +21,8 @@ class DSA:
                 iters = 1000,
                 score_method: Literal["angular", "euclidean"] = "angular",
                 lr = 0.01,
-                zero_pad = True,
+                group: Literal["GL(n)", "O(n)", "SO(n)"] = "O(n)",
+                zero_pad = False,
                 device = 'cpu',
                 verbose = False,
                 threaded=0):
@@ -85,7 +86,10 @@ class DSA:
         
         lr : float
             learning rate of the Procrustes over vector fields optimization
-        
+
+        group : {'SO(n)','O(n)', 'GL(n)'}
+            specifies the group of matrices to optimize over
+
         zero_pad : bool
             whether or not to zero-pad if the dimensions are different
 
@@ -123,7 +127,8 @@ class DSA:
         self.lr = lr
         self.device = device
         self.verbose = verbose    
-        self.zero_pad = zero_pad            
+        self.zero_pad = zero_pad       
+        self.group = group     
        
         #get a list of all DMDs here
         self.dmds = [[DMD(Xi,
@@ -136,7 +141,7 @@ class DSA:
                 self.device,
                 self.verbose) for j,Xi in enumerate(dat)] for i,dat in enumerate(self.data)]
 
-        self.simdist = SimilarityTransformDist(iters,score_method,lr,device,verbose)
+        self.simdist = SimilarityTransformDist(iters,score_method,lr,device,verbose,group)
 
     def check_method(self):
         '''
@@ -187,7 +192,6 @@ class DSA:
                 for i,data in enumerate([self.X,self.Y]):
                     if data is None:
                         continue
-
                     if isinstance(param[i],(int,float)):
                         out.append([param[i]] * len(data))
                     elif isinstance(param[i],(list,np.ndarray,tuple)):
