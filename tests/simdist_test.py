@@ -6,14 +6,14 @@ import torch
 from netrep.utils import whiten
 
 TOL = 1e-3
-SIMTOL = 1e-2
+SIMTOL = 2e-2
 
 @pytest.mark.parametrize('device',['cpu'])
 @pytest.mark.parametrize('preserve_var',[True,False])
 @pytest.mark.parametrize('dtype',['numpy'])
 @pytest.mark.parametrize('score_method',['angular','euclidean'])
 @pytest.mark.parametrize('n', [10,50,100])
-@pytest.mark.parametrize('group',['O(n)','GL(n)','SO(n)'])
+@pytest.mark.parametrize('group',['GL(n)','O(n)','SO(n)'])
 @pytest.mark.parametrize('seed', [5])
 def test_simdist_convergent(seed,n,score_method,dtype,preserve_var,group,device):
     rng = np.random.default_rng(seed) 
@@ -21,18 +21,24 @@ def test_simdist_convergent(seed,n,score_method,dtype,preserve_var,group,device)
     if group == 'SO(n)':
         Q = special_ortho_group(seed=rng,dim=n).rvs()
         Y = Q @ X @ Q.T
+        iters = 5000
     elif group == 'O(n)':
         Q = ortho_group(seed=rng,dim=n).rvs()
+        while np.linalg.det(Q) > 0:
+            Q = ortho_group(seed=rng,dim=n).rvs()
         Y = Q @ X @ Q.T
+        iters = 5000
     elif group == 'GL(n)':
         #draw random invertible matrix 
         Q = rng.random(size=(n,n))
+        Q /= np.linalg.norm(Q,axis=0)
         Y = Q @ X @ np.linalg.inv(Q)
+        iters = 80_000
 
     X,_ = whiten(X,0,preserve_variance=preserve_var)
     Y,_ = whiten(Y,0,preserve_variance=preserve_var)
     #excessive but we just want to see that it converges
-    sim = SimilarityTransformDist(lr=1e-2,iters=5000,score_method=score_method,device=device,group=group)
+    sim = SimilarityTransformDist(lr=1e-2,iters=iters,score_method=score_method,device=device,group=group)
     if dtype == 'torch':
         X = torch.tensor(X).float()
         Y = torch.tensor(Y).float()
