@@ -199,7 +199,7 @@ class SimilarityTransformDist:
                                                                      verbose=self.verbose)
         if group == "O(n)":
             #permute the first row and column of B then rerun the optimization
-            P = torch.eye(B.shape[0])
+            P = torch.eye(B.shape[0],device=self.device)
             P[[0, 1], :] = P[[1, 0], :]
             losses, C_star, sim_net = self.optimize_C(A,
                                                     P @ B @ P.T,
