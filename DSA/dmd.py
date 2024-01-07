@@ -1,6 +1,8 @@
 """This module computes the Havok DMD model for a given dataset."""
 import numpy as np
 import torch
+# from sklearn.gaussian_process.kernels import DotProduct, Kernel
+# from kooplearn._src.operator_regression.dual import fit_reduced_rank_regression
 
 def embed_signal_torch(data, n_delays, delay_interval=1):
     """
@@ -58,6 +60,8 @@ class DMD:
             rank=None,
             rank_thresh=None,
             rank_explained_variance=None,
+            reduced_rank_reg=True,
+            optimize_rank=False,
             lamb=0,
             device='cpu',
             verbose=False,
@@ -95,6 +99,13 @@ class DMD:
             Parameter that controls the rank of V in fitting HAVOK DMD by indicating the percentage of
             cumulative explained variance that should be explained by the columns of V. Defaults to None.
 
+        reduced_rank_reg : bool
+            Determines whether to use reduced rank regression (True) or principal component regression (False)
+
+        optimize_rank : bool, or list of ints
+            Determines whether to optimize the rank of the dmd model based on spectral bias. If True, will default
+            to a range of ranks from 1 to the number of singular values. If a list of ints is provided, will use that instead. 
+        
         lamb : float
             Regularization parameter for ridge regression. Defaults to 0.
 
@@ -125,6 +136,8 @@ class DMD:
         self.rank = rank
         self.rank_thresh = rank_thresh
         self.rank_explained_variance = rank_explained_variance
+        self.reduced_rank_reg = reduced_rank_reg
+        self.optimize_rank = optimize_rank
         self.lamb = lamb
         self.verbose = verbose
         
@@ -233,45 +246,24 @@ class DMD:
         cumulative_explained = torch.cumsum(exp_variance_inds, 0)
         self.cumulative_explained_variance = cumulative_explained
         
+        #make the X and Y components of the regression by staggering the hankel eigen-time delay coordinates by time
+        if self.ntrials > 1:
+            V = self.V.reshape(self.H.shape)
+            #first reshape back into Hankel shape, separated by trials
+            newshape = (self.H.shape[0]*(self.H.shape[1]-1),self.H.shape[2])
+            self.Vt_minus = V[:,:-1].reshape(newshape)
+            self.Vt_plus = V[:,1:].reshape(newshape)
+        else:
+            self.Vt_minus = self.V[:-1]
+            self.Vt_plus = self.V[1:]
+
         if self.verbose:
             print("SVD complete!")
     
-    def compute_havok_dmd(
-            self,
-            rank=None,
-            rank_thresh=None,
-            rank_explained_variance=None,
-            lamb=0,
-        ):
-        """
-        Computes the Havok DMD matrix.
-
-        Parameters
-        ----------
-        rank : int
-            The rank of V in fitting HAVOK DMD - i.e., the number of columns of V to 
-            use to fit the DMD model. Defaults to None, in which case all columns of V
-            will be used. Provide only if you want to override the value from the init.
-
-        rank_thresh : float
-            Parameter that controls the rank of V in fitting HAVOK DMD by dictating a threshold
-            of singular values to use. Explicitly, the rank of V will be the number of singular
-            values greater than rank_thresh. Defaults to None - provide only if you want
-            to override the value from the init.
-        
-        rank_explained_variance : float
-            Parameter that controls the rank of V in fitting HAVOK DMD by indicating the percentage of
-            cumulative explained variance that should be explained by the columns of V. Defaults to None -
-            provide only if you want to overried the value from the init.
-
-        lamb : float
-            Regularization parameter for ridge regression. Defaults to 0 - provide only if you want
-            to override the value of n_delays from the init.
-
-        """
-        if self.verbose:
-            print("Computing least squares fits to HAVOK DMD ...")
-
+    def recalc_rank(self,rank,rank_thresh,rank_explained_variance):
+        '''
+        this will determine what rank the operator will be, based on the arguments provided.
+        '''
         # if an argument was provided, overwrite the stored rank information
         none_vars = (rank is None) + (rank_thresh is None) + (rank_explained_variance is None)
         if none_vars != 3:
@@ -282,7 +274,6 @@ class DMD:
         self.rank = self.rank if rank is None else rank
         self.rank_thresh = self.rank_thresh if rank_thresh is None else rank_thresh
         self.rank_explained_variance = self.rank_explained_variance if rank_explained_variance is None else rank_explained_variance
-        self.lamb = self.lamb if lamb is None else lamb
 
         none_vars = (self.rank is None) + (self.rank_thresh is None) + (self.rank_explained_variance is None)
         if none_vars < 2:
@@ -302,29 +293,56 @@ class DMD:
         if self.rank > self.H.shape[-1]:
             self.rank = self.H.shape[-1]
 
-        # reshape for leastsquares
-        if self.ntrials > 1:
-            V = self.V.reshape(self.H.shape)
-            #first reshape back into Hankel shape, separated by trials
-            newshape = (self.H.shape[0]*(self.H.shape[1]-1),self.H.shape[2])
-            Vt_minus = V[:,:-1].reshape(newshape)
-            Vt_plus = V[:,1:].reshape(newshape)
-        else:
-            Vt_minus = self.V[:-1]
-            Vt_plus = self.V[1:]
-
         if self.rank is None:
             if self.S[-1] > self.rank_thresh:
                 self.rank = len(self.S)
             else:
                 self.rank = torch.argmax(torch.arange(len(self.S), 0, -1).to(self.device)*(self.S < self.rank_thresh))
-        A_v = (torch.linalg.inv(Vt_minus[:, :self.rank].T @ Vt_minus[:, :self.rank] + self.lamb*torch.eye(self.rank).to(self.device))@ Vt_minus[:, :self.rank].T@ Vt_plus[:, :self.rank]).T
+
+    def compute_havok_dmd(self,lamb=0):
+        """
+        Computes the Havok DMD matrix (Principal Component Regression)
+
+        Parameters
+        ----------
+        lamb : float
+            Regularization parameter for ridge regression. Defaults to 0 - provide only if you want
+            to override the value of n_delays from the init.
+
+        """
+        if self.verbose:
+            print("Computing least squares fits to HAVOK DMD ...")
+            
+        # reshape for leastsquares
+        self.lamb = self.lamb if lamb is None else lamb
+    
+        A_v = (torch.linalg.inv(self.Vt_minus[:, :self.rank].T @ self.Vt_minus[:, :self.rank] + self.lamb*torch.eye(self.rank).to(self.device)) \
+               @ self.Vt_minus[:, :self.rank].T @ self.Vt_plus[:, :self.rank]).T
         self.A_v = A_v
         self.A_havok_dmd = self.U @ self.S_mat[:self.U.shape[1], :self.rank] @ self.A_v @ self.S_mat_inv[:self.rank, :self.U.shape[1]] @ self.U.T
         
         if self.verbose:
             print("Least squares complete! \n")
 
+    def compute_reduced_rank_regression(self,lamb=0):
+        """
+        Computes the reduced rank regression matrix
+        """
+        if self.verbose:
+            print("Computing reduced rank regression ...")
+        self.lamb = self.lamb if lamb is None else lamb
+        proj_mat = self.Vt_plus.T @ self.Vt_minus @ np.linalg.inv(self.Vt_minus.T @ self.Vt_minus + self.lamb*torch.eye(self.Vt_minus.shape[1])) @ self.Vt_minus.T @ self.Vt_plus
+        evals, evecs = np.linalg.eig(proj_mat)
+        idx = np.argsort(evals)[::-1]
+        evals = evals[idx]
+        evecs = evecs[:,idx]
+        proj_mat = evecs[:,:self.rank] @ evecs[:,:self.rank].T
+        B_ridge = np.linalg.inv(self.Vt_minus.T @ self.Vt_minus + lamb * np.eye(self.Vt_minus.shape[1])) @ self.Vt_minus.T @ self.Vt_plus
+        self.A_v = (B_ridge @ proj_mat).T
+
+        #not positive about this last one
+        self.A_havok_dmd = self.U @ self.S_mat[:self.U.shape[1], :] @ self.A_v @ self.S_mat_inv[: :self.U.shape[1]] @ self.U.T
+        
     def fit(
             self,
             data=None,
@@ -399,7 +417,12 @@ class DMD:
     
         self.compute_hankel(data, n_delays, delay_interval)
         self.compute_svd()
-        self.compute_havok_dmd(rank, rank_thresh, rank_explained_variance, lamb)
+        self.recalc_rank(rank,rank_thresh,rank_explained_variance)
+
+        if self.reduced_rank_reg:
+            self.compute_reduced_rank_regression(lamb)
+        else:
+            self.compute_havok_dmd(lamb)
         if send_to_cpu:
             self.all_to_device('cpu') #send back to the cpu to save memory
 
@@ -446,3 +469,146 @@ class DMD:
         for k,v in self.__dict__.items():
             if isinstance(v, torch.Tensor):
                 self.__dict__[k] = v.to(device)
+
+# class KernelDMD(DMD):
+#     def __init__(
+#             self,
+#             data,
+#             n_delays,
+#             kernel=DotProduct(),
+#             delay_interval=1,
+#             rank=None,
+#             rank_thresh=None,
+#             rank_explained_variance=None,
+#             lamb=0,
+#             device='cpu',
+#             verbose=False,
+#         ):
+#         """
+#         Subclass of DMD that uses a kernel to compute the DMD model.
+#         This will also use Reduced Rank Regresion as opposed to Principal Component Regression (above)
+#         """
+#         super().__init__(data,n_delays,delay_interval,rank,rank_thresh,rank_explained_variance,lamb,device,verbose)
+#         self.kernel = kernel
+    
+#     def compute_kernels(self,X,Y):
+#         """
+#         Computes the kernel for XX,YY,and XY for reduced rank regression
+#         """
+#         self.k_x = self.kernel(X)
+#         self.k_y = self.kernel(Y)
+#         self.k_yx = self.kernel(Y, X)
+
+#     def compute_rr_kernel_regression(self,lamb=0):
+#         """
+#         Computes the Kernel Havok DMD matrix with RR regression
+#         """
+#         if self.verbose:
+#             print("Computing Reduced Rank Regression on kernels ...")
+#         self.lamb = self.lamb if lamb is None else lamb
+#         U,V,sigma = fit_reduced_rank_regression(self.k_x,self.k_y,self.lamb,self.rank,
+#                                                 svd_solver="arnoldi",_return_singular_values=True)
+        
+
+
+#     def fit(
+#             self,
+#             data=None,
+#             n_delays=None,
+#             kernel=None,
+#             delay_interval=None,
+#             rank=None,
+#             rank_thresh=None,
+#             rank_explained_variance=None,
+#             lamb=None,
+#             device=None,
+#             verbose=None,
+#             send_to_cpu=False,
+#             eigen_time_delay_coordinates=False
+#         ):
+#         """
+#         Parameters
+#         ----------
+#         data : np.ndarray or torch.tensor
+#             The data to fit the DMD model to. Must be either: (1) a
+#             2-dimensional array/tensor of shape T x N where T is the number
+#             of time points and N is the number of observed dimensions
+#             at each time point, or (2) a 3-dimensional array/tensor of shape
+#             K x T x N where K is the number of "trials" and T and N are
+#             as defined above. Defaults to None - provide only if you want to
+#             override the value from the init.
+
+#         n_delays : int
+#             Parameter that controls the size of the delay embedding. Explicitly,
+#             the number of delays to include. Defaults to None - provide only if you want to
+#             override the value from the init.
+
+#         delay_interval : int
+#             The number of time steps between each delay in the delay embedding. Defaults to None - 
+#             provide only if you want to override the value from the init.
+
+#         rank : int
+#             The rank of V in fitting HAVOK DMD - i.e., the number of columns of V to 
+#             use to fit the DMD model. Defaults to None, in which case all columns of V
+#             will be used - provide only if you want to
+#             override the value from the init.
+
+#         rank_thresh : int
+#             Parameter that controls the rank of V in fitting HAVOK DMD by dictating a threshold
+#             of singular values to use. Explicitly, the rank of V will be the number of singular
+#             values greater than rank_thresh. Defaults to None - provide only if you want to
+#             override the value from the init.
+
+#         rank_explained_variance : float
+#             Parameter that controls the rank of V in fitting HAVOK DMD by indicating the percentage of
+#             cumulative explained variance that should be explained by the columns of V. Defaults to None -
+#             provide only if you want to overried the value from the init.
+
+#         lamb : float
+#             Regularization parameter for ridge regression. Defaults to None - provide only if you want to
+#             override the value from the init.
+
+#         device: string or int
+#             A string or int to indicate the device to torch. For example, can be 'cpu' or 'cuda',
+#             or alternatively 0 if the intenion is to use GPU device 0. Defaults to None - provide only 
+#             if you want to override the value from the init.
+
+#         verbose: bool
+#             If True, print statements will be provided about the progress of the fitting procedure. 
+#             Defaults to None - provide only if you want to override the value from the init.
+        
+#         send_to_cpu: bool
+#             If True, will send all tensors in the object back to the cpu after everything is computed.
+#             This is implemented to prevent gpu memory overload when computing multiple DMDs.
+#         """
+#         # if parameters are provided, overwrite them from the init
+#         self.device = self.device if device is None else device
+#         self.verbose = self.verbose if verbose is None else verbose
+#         self.kernel = self.kernel if kernel is None else kernel
+    
+#         self.compute_hankel(data, n_delays, delay_interval)
+#         #TODO: do we need to compute the SVD here? or can we do RRR on the hankel matrix itself
+#         if eigen_time_delay_coordinates:
+#             self.compute_svd()
+#         else:
+#             self.V = self.H #so we don't have to rewrite the next steps
+#         #need to compute the kernels from the eigen-time-delay coordinates
+#         if self.ntrials > 1:
+#             V = self.V.reshape(self.H.shape)
+#             #first reshape back into Hankel shape, separated by trials
+#             newshape = (self.H.shape[0]*(self.H.shape[1]-1),self.H.shape[2])
+#             Vt_minus = V[:,:-1].reshape(newshape)
+#             Vt_plus = V[:,1:].reshape(newshape)
+#         else:
+#             Vt_minus = self.V[:-1]
+#             Vt_plus = self.V[1:]
+
+#         self.compute_kernels(Vt_minus,Vt_plus)
+        
+#         self.recalc_rank(rank,rank_thresh,rank_explained_variance)
+#         self.compute_rr_kernel_regression(lamb)
+#         if send_to_cpu:
+#             self.all_to_device('cpu') #send back to the cpu to save memory
+
+#     def predict(self):
+#         pass
