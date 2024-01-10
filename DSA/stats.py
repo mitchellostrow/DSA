@@ -197,6 +197,16 @@ def aic(x, y, rank, norm=True):
 
     return AIC
 
+def log_mse(x,y,norm=True):
+    x = torch_convert(x)
+    y = torch_convert(y)
+
+    N = np.prod(x.shape)
+    logmse = float(N*torch.log(((x - y)**2).sum()/N))
+    if norm:
+        logmse /= N
+    return logmse
+
 def compute_all_stats(true_vals, pred_vals, rank, norm=True):
     """
     Compute all statistics and put them in a dictionary.
@@ -230,5 +240,6 @@ def compute_all_stats(true_vals, pred_vals, rank, norm=True):
         "MSE": mse(true_vals, pred_vals),
         "R2": r2(true_vals, pred_vals),
         "Correl": correl(true_vals, pred_vals),
-        "AIC": aic(true_vals, pred_vals, rank, norm=norm)
+        "AIC": aic(true_vals, pred_vals, rank, norm=norm),
+        "logMSE": log_mse(true_vals,pred_vals,norm=norm)
     }
