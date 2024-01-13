@@ -25,7 +25,9 @@ class DSA:
                 zero_pad = False,
                 device = 'cpu',
                 verbose = False,
-                threaded=0):
+                threaded=0,
+                reduced_rank_reg = False
+            ):
         """
         Parameters
         __________
@@ -129,6 +131,7 @@ class DSA:
         self.verbose = verbose    
         self.zero_pad = zero_pad       
         self.group = group     
+        self.reduced_rank_reg = reduced_rank_reg
        
         #get a list of all DMDs here
         self.dmds = [[DMD(Xi,
@@ -137,6 +140,7 @@ class DSA:
                 self.rank[i][j],
                 self.rank_thresh[i][j], 
                 self.rank_explained_variance[i][j],
+                self.reduced_rank_reg,
                 self.lamb[i][j],
                 self.device,
                 self.verbose) for j,Xi in enumerate(dat)] for i,dat in enumerate(self.data)]
