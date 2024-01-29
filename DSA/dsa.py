@@ -25,7 +25,6 @@ class DSA:
                 zero_pad = False,
                 device = 'cpu',
                 verbose = False,
-                threaded=0,
                 reduced_rank_reg = False
             ):
         """
@@ -101,10 +100,6 @@ class DSA:
         verbose : bool
             whether or not print when sections of the analysis is completed
         
-        threaded : int
-            how many threads to use in multiprocessing. If zero, doesn't use multiprocessing
-
-      
         """
         self.X = X
         self.Y = Y

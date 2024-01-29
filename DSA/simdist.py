@@ -147,7 +147,7 @@ class SimilarityTransformDist:
             B, 
             iters = None, 
             lr = None, 
-            zero_pad = True,
+            zero_pad = False,
             group = None
             ):
         """

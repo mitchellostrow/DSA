@@ -28,6 +28,9 @@ def embed_signal_torch(data, n_delays, delay_interval=1):
         data = torch.from_numpy(data)
     device = data.device
 
+    if data.shape[int(data.ndim==3)] - (n_delays - 1)*delay_interval < 1:
+        raise ValueError("The number of delays is too large for the number of time points in the data!")
+
     # initialize the embedding
     if data.ndim == 3:
         embedding = torch.zeros((data.shape[0], data.shape[1] - (n_delays - 1)*delay_interval, data.shape[2]*n_delays)).to(device)
@@ -226,12 +229,12 @@ class DMD:
         self.V = V
 
         # construct the singuar value matrix and its inverse
-        dim = self.n_delays * self.n
-        s = len(S)
-        self.S_mat = torch.zeros(dim, dim).to(self.device)
-        self.S_mat_inv = torch.zeros(dim, dim).to(self.device)
-        self.S_mat[np.arange(s), np.arange(s)] = S
-        self.S_mat_inv[np.arange(s), np.arange(s)] = 1 / S
+        # dim = self.n_delays * self.n
+        # s = len(S)
+        # self.S_mat = torch.zeros(dim, dim,dtype=torch.float32).to(self.device)
+        # self.S_mat_inv = torch.zeros(dim, dim,dtype=torch.float32).to(self.device)
+        self.S_mat = torch.diag(S).to(self.device)
+        self.S_mat_inv= torch.diag(1 / S).to(self.device)
 
         # compute explained variance
         exp_variance_inds = self.S**2 / ((self.S**2).sum())
@@ -239,15 +242,27 @@ class DMD:
         self.cumulative_explained_variance = cumulative_explained
         
         #make the X and Y components of the regression by staggering the hankel eigen-time delay coordinates by time
+        if self.reduced_rank_reg:
+            V = self.V
+        else:
+            V = self.V
+
         if self.ntrials > 1:
-            V = self.V.reshape(self.H.shape)
+            if V.numel() < self.H.numel():
+                raise ValueError("The dimension of the SVD of the Hankel matrix is smaller than the dimension of the Hankel matrix itself. \n \
+                                 This is likely due to the number of time points being smaller than the number of dimensions. \n \
+                                 Please reduce the number of delays.")
+                                 
+            V = V.reshape(self.H.shape)
+
             #first reshape back into Hankel shape, separated by trials
             newshape = (self.H.shape[0]*(self.H.shape[1]-1),self.H.shape[2])
             self.Vt_minus = V[:,:-1].reshape(newshape)
             self.Vt_plus = V[:,1:].reshape(newshape)
         else:
-            self.Vt_minus = self.V[:-1]
-            self.Vt_plus = self.V[1:]
+            self.Vt_minus = V[:-1]
+            self.Vt_plus = V[1:]
+
 
         if self.verbose:
             print("SVD complete!")
@@ -364,6 +379,7 @@ class DMD:
 
         self.A_v = B_ols @ proj_mat
         self.A_havok_dmd = self.U @ self.S_mat[:self.U.shape[1],:self.A_v.shape[1]] @ self.A_v.T @ self.S_mat_inv[:self.A_v.shape[0], :self.U.shape[1]] @ self.U.T
+
 
         if self.verbose:
             print("Reduced Rank Regression complete! \n")
@@ -497,3 +513,4 @@ class DMD:
         for k,v in self.__dict__.items():
             if isinstance(v, torch.Tensor):
                 self.__dict__[k] = v.to(device)
+

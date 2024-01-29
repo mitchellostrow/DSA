@@ -1,5 +1,9 @@
 import numpy as np
 import torch
+from .dmd import DMD
+from .simdist import SimilarityTransformDist
+from .dsa import DSA
+import warnings
 
 def torch_convert(x):
     """
@@ -240,6 +244,93 @@ def compute_all_stats(true_vals, pred_vals, rank, norm=True):
         "MSE": mse(true_vals, pred_vals),
         "R2": r2(true_vals, pred_vals),
         "Correl": correl(true_vals, pred_vals),
+        "AIC": aic(true_vals, pred_vals, rank, norm=norm)
+    }
+
+def dsa_to_id(data,rank,n_delays,delay_interval,iters=1000,lr=1e-2,
+              score_method='angular',device='cuda'):
+    """
+    Compute the DSA between the provided data and the ID matrix of the specified rank
+
+    Parameters
+    ----------
+    data : np.ndarray or torch.tensor
+        The data to compute the DSA model for. Must be of shape T x N or C x T x N 
+        where C is the number of conditions, T is the number
+        of time points, and N is the number of observed dimensions at each time point.
+    rank : int
+        The rank of the dmd model.
+    n_delays : int
+        The number of delays to use for the dmd model.
+    delay_interval : int
+        The number of time steps between each delay.
+    iters : int
+        The number of iterations to use for the similarity transform distance.
+    lr : float
+        The learning rate to use for the similarity transform distance .
+    score_method : str
+        Whic metric value to use for the similarity transform distance. Defaults to 'angular'.
+    device : str
+        The device to use. Defaults to 'cuda'.
+
+    Returns
+    -------
+    score: float
+
+
+    """
+    data = torch_convert(data)
+    dmd = DMD(data,n_delays,delay_interval,rank,device=device)
+    dmd.fit()
+
+    if dmd.rank < rank:
+        warnings.warn(f"The rank of the DMD model {dmd.rank} is less than the specified rank {rank}. Will revert to comparison at that rank.") 
+
+    simdist = SimilarityTransformDist(iters,score_method=score_method,lr=lr,device=device)
+    return simdist.fit_score(dmd.A_v,torch.eye(dmd.rank,device=device))
+
+
+def dsa_bw_data_splits(data,rank,n_delays,delay_interval,nsplits=2,iters=1000,lr=1e-2,
+              score_method='angular',device='cuda'):
+    """
+    Compute the DSA between splits of the provided data 
+
+    Parameters
+    ----------
+    data : list, np.ndarray or torch.tensor
+        The data to compute the DSA model over. 
+        If data is a list, will default to computing the DSA between elements in the list.
+        If not, will split the data into nsplits and compute the DSA between the splits.  
+        Will always split on the 0th axis, so if data is a 3D array, will split along the context axis,
+        and if data is 2d, will split along time.  
+    rank : int
+        The rank of the dmd model.
+    n_delays : int
+        The number of delays to use for the dmd model.
+    delay_interval : int
+        The number of time steps between each delay.
+    iters : int
+        The number of iterations to use for the similarity transform distance.
+    lr : float
+        The learning rate to use for the similarity transform distance .
+    score_method : str
+        Whic metric value to use for the similarity transform distance. Defaults to 'angular'.
+    device : str
+        The device to use. Defaults to 'cuda'.
+
+    Returns
+    -------
+    score: float
+    """
+
+    if not isinstance(data,list):
+        data = np.split(data,nsplits,axis=0)
+    
+    dsa = DSA(data,n_delays=n_delays,rank=rank,delay_interval=delay_interval,iters=iters,lr=lr,score_method=score_method,device=device)
+    return dsa.fit_score()
+        
+=======
         "AIC": aic(true_vals, pred_vals, rank, norm=norm),
         "logMSE": log_mse(true_vals,pred_vals,norm=norm)
     }
+
