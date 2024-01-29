@@ -25,7 +25,7 @@ class DSA:
                 zero_pad = False,
                 device = 'cpu',
                 verbose = False,
-                threaded=0):
+                ):
         """
         Parameters
         __________
@@ -99,10 +99,6 @@ class DSA:
         verbose : bool
             whether or not print when sections of the analysis is completed
         
-        threaded : int
-            how many threads to use in multiprocessing. If zero, doesn't use multiprocessing
-
-      
         """
         self.X = X
         self.Y = Y
@@ -137,6 +133,7 @@ class DSA:
                 self.rank[i][j],
                 self.rank_thresh[i][j], 
                 self.rank_explained_variance[i][j],
+                False, #for now reduced_rank_reg defaulting to false
                 self.lamb[i][j],
                 self.device,
                 self.verbose) for j,Xi in enumerate(dat)] for i,dat in enumerate(self.data)]
