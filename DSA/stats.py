@@ -201,6 +201,16 @@ def aic(x, y, rank, norm=True):
 
     return AIC
 
+def log_mse(x,y,norm=True):
+    x = torch_convert(x)
+    y = torch_convert(y)
+
+    N = np.prod(x.shape)
+    logmse = float(N*torch.log(((x - y)**2).sum()/N))
+    if norm:
+        logmse /= N
+    return logmse
+
 def compute_all_stats(true_vals, pred_vals, rank, norm=True):
     """
     Compute all statistics and put them in a dictionary.
@@ -319,3 +329,8 @@ def dsa_bw_data_splits(data,rank,n_delays,delay_interval,nsplits=2,iters=1000,lr
     dsa = DSA(data,n_delays=n_delays,rank=rank,delay_interval=delay_interval,iters=iters,lr=lr,score_method=score_method,device=device)
     return dsa.fit_score()
         
+=======
+        "AIC": aic(true_vals, pred_vals, rank, norm=norm),
+        "logMSE": log_mse(true_vals,pred_vals,norm=norm)
+    }
+

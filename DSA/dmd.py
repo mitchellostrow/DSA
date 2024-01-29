@@ -254,6 +254,7 @@ class DMD:
                                  Please reduce the number of delays.")
                                  
             V = V.reshape(self.H.shape)
+
             #first reshape back into Hankel shape, separated by trials
             newshape = (self.H.shape[0]*(self.H.shape[1]-1),self.H.shape[2])
             self.Vt_minus = V[:,:-1].reshape(newshape)
@@ -261,6 +262,7 @@ class DMD:
         else:
             self.Vt_minus = V[:-1]
             self.Vt_plus = V[1:]
+
 
         if self.verbose:
             print("SVD complete!")
@@ -354,12 +356,12 @@ class DMD:
             print("Computing Projector Matrix for Reduced Rank Regression")
 
         self.lamb = self.lamb if lamb is None else lamb
+
         self.proj_mat = self.Vt_plus.T @ self.Vt_minus @ torch.linalg.inv(self.Vt_minus.T @ self.Vt_minus + 
                                                                           self.lamb*torch.eye(self.Vt_minus.shape[1]).to(self.device)) @ \
                                                                           self.Vt_minus.T @ self.Vt_plus
         
         self.proj_mat_S, self.proj_mat_V = torch.linalg.eigh(self.proj_mat)
-        import pdb; pdb.set_trace()
         #todo: more efficient to flip ranks (negative index) in compute_reduced_rank_regression but also less interpretable
         self.proj_mat_S = torch.flip(self.proj_mat_S, dims=(0,))
         self.proj_mat_V = torch.flip(self.proj_mat_V, dims=(1,))
@@ -375,8 +377,9 @@ class DMD:
         proj_mat = self.proj_mat_V[:,:self.rank] @ self.proj_mat_V[:,:self.rank].T   
         B_ols = torch.linalg.inv(self.Vt_minus.T @ self.Vt_minus + self.lamb*torch.eye(self.Vt_minus.shape[1]).to(self.device)) @ self.Vt_minus.T @ self.Vt_plus
 
-        self.A_v = self.A_havok_dmd = (B_ols @ proj_mat).T
-        # self.A_havok_dmd = self.U @ self.S_mat[:self.U.shape[1],:self.A_v.shape[1]] @ self.A_v @ self.S_mat_inv[:self.A_v.shape[0], :self.U.shape[1]] @ self.U.T
+        self.A_v = B_ols @ proj_mat
+        self.A_havok_dmd = self.U @ self.S_mat[:self.U.shape[1],:self.A_v.shape[1]] @ self.A_v.T @ self.S_mat_inv[:self.A_v.shape[0], :self.U.shape[1]] @ self.U.T
+
 
         if self.verbose:
             print("Reduced Rank Regression complete! \n")
