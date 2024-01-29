@@ -244,7 +244,8 @@ def compute_all_stats(true_vals, pred_vals, rank, norm=True):
         "MSE": mse(true_vals, pred_vals),
         "R2": r2(true_vals, pred_vals),
         "Correl": correl(true_vals, pred_vals),
-        "AIC": aic(true_vals, pred_vals, rank, norm=norm)
+        "AIC": aic(true_vals, pred_vals, rank, norm=norm),
+        "logMSE": log_mse(true_vals,pred_vals,norm=norm)
     }
 
 def dsa_to_id(data,rank,n_delays,delay_interval,iters=1000,lr=1e-2,
@@ -329,8 +330,5 @@ def dsa_bw_data_splits(data,rank,n_delays,delay_interval,nsplits=2,iters=1000,lr
     dsa = DSA(data,n_delays=n_delays,rank=rank,delay_interval=delay_interval,iters=iters,lr=lr,score_method=score_method,device=device)
     return dsa.fit_score()
         
-=======
-        "AIC": aic(true_vals, pred_vals, rank, norm=norm),
-        "logMSE": log_mse(true_vals,pred_vals,norm=norm)
-    }
+
 
