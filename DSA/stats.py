@@ -292,7 +292,7 @@ def dsa_to_id(data,rank,n_delays,delay_interval,iters=1000,lr=1e-2,
 
 
 def dsa_bw_data_splits(data,rank,n_delays,delay_interval,nsplits=2,iters=1000,lr=1e-2,
-              score_method='angular',device='cuda'):
+              score_method='angular',device='cuda',avg=True):
     """
     Compute the DSA between splits of the provided data 
 
@@ -321,14 +321,18 @@ def dsa_bw_data_splits(data,rank,n_delays,delay_interval,nsplits=2,iters=1000,lr
 
     Returns
     -------
-    score: float
+    score: np.ndarray (nsplits,nsplits)
     """
 
     if not isinstance(data,list):
         data = np.split(data,nsplits,axis=0)
     
     dsa = DSA(data,n_delays=n_delays,rank=rank,delay_interval=delay_interval,iters=iters,lr=lr,score_method=score_method,device=device)
-    return dsa.fit_score()
-        
+    score = dsa.fit_score()
+    if avg:
+        #average over the lower triangular component, not including the diagonal
+        score = score[np.tril_indices(score.shape[0],k=-1)].mean()
+    else:
+        return score
 
 
