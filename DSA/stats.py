@@ -249,7 +249,7 @@ def compute_all_stats(true_vals, pred_vals, rank, norm=True):
     }
 
 def dsa_to_id(data,rank,n_delays,delay_interval,iters=1000,lr=1e-2,
-              score_method='angular',device='cuda'):
+              score_method='angular',device='cpu'):
     """
     Compute the DSA between the provided data and the ID matrix of the specified rank
 
@@ -272,7 +272,7 @@ def dsa_to_id(data,rank,n_delays,delay_interval,iters=1000,lr=1e-2,
     score_method : str
         Whic metric value to use for the similarity transform distance. Defaults to 'angular'.
     device : str
-        The device to use. Defaults to 'cuda'.
+        The device to use. Defaults to 'cpu'.
 
     Returns
     -------
@@ -292,7 +292,7 @@ def dsa_to_id(data,rank,n_delays,delay_interval,iters=1000,lr=1e-2,
 
 
 def dsa_bw_data_splits(data,rank,n_delays,delay_interval,nsplits=2,iters=1000,lr=1e-2,
-              score_method='angular',device='cuda',avg=True):
+              score_method='angular',device='cpu',avg=True):
     """
     Compute the DSA between splits of the provided data 
 
@@ -317,7 +317,10 @@ def dsa_bw_data_splits(data,rank,n_delays,delay_interval,nsplits=2,iters=1000,lr
     score_method : str
         Whic metric value to use for the similarity transform distance. Defaults to 'angular'.
     device : str
-        The device to use. Defaults to 'cuda'.
+        The device to use. Defaults to 'cpu'.
+    avg : bool
+        Whether to average the DSA scores over the lower triangular component, not including the diagonal.
+        Defaults to True.
 
     Returns
     -------
