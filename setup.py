@@ -2,7 +2,7 @@ import setuptools
 
 setuptools.setup(
     name="DSA",
-    version="0.0.1",
+    version="1.0.1",
     url="https://github.com/mitchellostrow/DSA",
 
     author="Mitchell Ostrow",
@@ -13,6 +13,7 @@ setuptools.setup(
     install_requires=[
         'numpy>=1.24.0',
         'torch>=1.3.0',
+        'kooplearn>=1.0.6'
     ],
     extras_require={
         'dev': [

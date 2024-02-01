@@ -1,4 +1,5 @@
 from DSA.dmd import DMD
+from DSA.kerneldmd import KernelDMD
 from DSA.simdist import SimilarityTransformDist
 from typing import Literal
 import torch
@@ -25,7 +26,10 @@ class DSA:
                 zero_pad = False,
                 device = 'cpu',
                 verbose = False,
-                reduced_rank_reg = False
+                reduced_rank_reg = False,
+                kernel=None,
+                num_centers=0.1,
+                svd_solver='full'
             ):
         """
         Parameters
@@ -127,18 +131,34 @@ class DSA:
         self.zero_pad = zero_pad       
         self.group = group     
         self.reduced_rank_reg = reduced_rank_reg
+        self.kernel = kernel
        
-        #get a list of all DMDs here
-        self.dmds = [[DMD(Xi,
-                self.n_delays[i][j],
-                self.delay_interval[i][j],
-                self.rank[i][j],
-                self.rank_thresh[i][j], 
-                self.rank_explained_variance[i][j],
-                self.reduced_rank_reg,
-                self.lamb[i][j],
-                self.device,
-                self.verbose) for j,Xi in enumerate(dat)] for i,dat in enumerate(self.data)]
+        if kernel is None:
+            #get a list of all DMDs here
+            self.dmds = [[DMD(Xi,
+                    self.n_delays[i][j],
+                    delay_interval=self.delay_interval[i][j],
+                    rank=self.rank[i][j],
+                    rank_thresh=self.rank_thresh[i][j], 
+                    rank_explained_variance=self.rank_explained_variance[i][j],
+                    reduced_rank_reg=self.reduced_rank_reg,
+                    lamb=self.lamb[i][j],
+                    device=self.device,
+                    verbose=self.verbose,
+                    send_to_cpu=self.send_to_cpu) for j,Xi in enumerate(dat)] for i,dat in enumerate(self.data)]
+        else:
+             #get a list of all DMDs here
+            self.dmds = [[KernelDMD(Xi,
+                    self.n_delays[i][j],
+                    kernel=self.kernel,
+                    num_centers=num_centers,
+                    delay_interval=self.delay_interval[i][j],
+                    rank=self.rank[i][j],
+                    reduced_rank_reg=self.reduced_rank_reg,
+                    lamb=self.lamb[i][j],
+                    verbose=self.verbose,
+                    svd_solver=svd_solver,
+                    ) for j,Xi in enumerate(dat)] for i,dat in enumerate(self.data)]
 
         self.simdist = SimilarityTransformDist(iters,score_method,lr,device,verbose,group)
 
@@ -208,7 +228,11 @@ class DSA:
                  rank=None,
                  rank_thresh = None,
                  rank_explained_variance=None,
+                 reduced_rank_reg=None,
                  lamb = None,
+                 device='cpu',
+                 verbose=False,
+                 send_to_cpu=True
                 ):
         """
         Recomputes only the DMDs with a single set of hyperparameters. This will not compare, that will need to be done with the full procedure
@@ -231,12 +255,12 @@ class DSA:
                 data.append([Y])
     
         dmds = [[DMD(Xi,n_delays,delay_interval,
-                     rank,rank_thresh,rank_explained_variance,
-                     lamb,self.device) for Xi in dat] for dat in data]
+                     rank,rank_thresh,rank_explained_variance,reduced_rank_reg,
+                     lamb,device,verbose,send_to_cpu) for Xi in dat] for dat in data]
             
         for dmd_sets in dmds:
             for dmd in dmd_sets:
-                dmd.fit(send_to_cpu=self.send_to_cpu)
+                dmd.fit()
 
         return dmds
 
@@ -255,7 +279,7 @@ class DSA:
         """
         for dmd_sets in self.dmds:
             for dmd in dmd_sets:
-                dmd.fit(send_to_cpu=self.send_to_cpu)
+                dmd.fit()
 
         return self.score()
     
