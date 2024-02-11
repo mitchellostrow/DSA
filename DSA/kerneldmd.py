@@ -95,7 +95,7 @@ class KernelDMD(NystroemKernel):
         #we need to use the inherited .fit method from NystroemKernel
         super().fit(self.data)
 
-        self.A_v = self.V.T @ self.kernel_YX @ self.U
+        self.A_v = self.V.T @ self.kernel_YX @ self.U / len(self.kernel_YX)
 
         if self.verbose:
             print("kernel regression complete")

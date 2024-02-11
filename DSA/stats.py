@@ -335,7 +335,7 @@ def dsa_bw_data_splits(data,rank,n_delays,delay_interval,nsplits=2,iters=1000,lr
     if avg:
         #average over the lower triangular component, not including the diagonal
         score = score[np.tril_indices(score.shape[0],k=-1)].mean()
-    else:
-        return score
+        
+    return score
 
 
