@@ -309,7 +309,7 @@ class DSA:
         ind2 = 1 - int(self.method == 'self-pairwise') 
         # 0 if self.pairwise (want to compare the set to itself)
 
-        sims = np.zeros((len(self.dmds[0]),len(self.dmds[ind2])))
+        self.sims = np.zeros((len(self.dmds[0]),len(self.dmds[ind2])))
         for i,dmd1 in enumerate(self.dmds[0]):
             for j,dmd2 in enumerate(self.dmds[ind2]):
                 if self.method == 'self-pairwise':
@@ -317,11 +317,11 @@ class DSA:
                         continue
                     if j > i:
                         continue
-                    sims[i,j] = sims[j,i] = self.simdist.fit_score(dmd1.A_v,dmd2.A_v,iters,lr,score_method,zero_pad=self.zero_pad)
+                    self.sims[i,j] = self.sims[j,i] = self.simdist.fit_score(dmd1.A_v,dmd2.A_v,iters,lr,score_method,zero_pad=self.zero_pad)
                 else:
-                    sims[i,j] = self.simdist.fit_score(dmd1.A_v,dmd2.A_v,iters,lr,score_method,zero_pad=self.zero_pad)
+                    self.sims[i,j] = self.simdist.fit_score(dmd1.A_v,dmd2.A_v,iters,lr,score_method,zero_pad=self.zero_pad)
         
         if self.method == 'default':
-            return sims[0,0]
+            return self.sims[0,0]
 
-        return sims
+        return self.sims
