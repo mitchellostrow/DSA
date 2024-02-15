@@ -326,9 +326,14 @@ def dsa_bw_data_splits(data,rank,n_delays,delay_interval,nsplits=2,iters=1000,lr
     -------
     score: np.ndarray (nsplits,nsplits)
     """
+    if isinstance(data,list):
+        data = np.array(data)
 
-    if not isinstance(data,list):
-        data = np.split(data,nsplits,axis=0)
+    if data.shape[0] % 2:
+        data = data[:-1]
+        
+    data = np.split(data,nsplits,axis=0)
+    
     
     dsa = DSA(data,n_delays=n_delays,rank=rank,delay_interval=delay_interval,iters=iters,lr=lr,score_method=score_method,device=device)
     score = dsa.fit_score()
