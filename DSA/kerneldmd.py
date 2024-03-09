@@ -122,6 +122,8 @@ class KernelDMD(NystroemKernel):
         
         if isinstance(test_data, torch.Tensor):
             test_data = test_data.numpy()
+        if isinstance(test_data,list):
+            test_data = np.array(test_data)
 
         isdim2 = False
         if test_data.ndim == 2: #if we have a single trajectory

@@ -4,6 +4,7 @@ import torch.optim as optim
 from typing import Literal
 import numpy as np
 import torch.nn.utils.parametrize as parametrize
+from scipy.stats import wasserstein_distance
 
 def pad_zeros(A,B,device):
 
@@ -104,12 +105,13 @@ class SimilarityTransformDist:
     Computes the Procrustes Analysis over Vector Fields
     """
     def __init__(self,
-                 iters = 200, 
-                 score_method: Literal["angular", "euclidean"] = "angular",
-                 lr = 0.01,
-                 device = 'cpu',
-                 verbose = False,
-                 group = "O(n)"
+                iters = 200, 
+                score_method: Literal["angular", "euclidean","wasserstein"] = "angular",
+                lr = 0.01,
+                device: Literal["cpu","cuda"] = 'cpu',
+                verbose = False,
+                group: Literal["O(n)","SO(n)","GL(n)"] = "O(n)",
+                wasserstein_compare = None
                 ):
         """
         Parameters
@@ -117,8 +119,10 @@ class SimilarityTransformDist:
         iters : int
             number of iterations to perform gradient descent
         
-        score_method : {"angular","euclidean"}
+        score_method : {"angular","euclidean","wasserstein"}
             specifies the type of metric to use 
+            "wasserstein" will compare the singular values or eigenvalues
+            of the two matrices as in Redman et al., (2023)
 
         lr : float
             learning rate
@@ -130,6 +134,10 @@ class SimilarityTransformDist:
         
         group : {'SO(n)','O(n)', 'GL(n)'}
             specifies the group of matrices to optimize over
+
+        wasserstein_compare : {'sv','eig',None}
+            specifies whether to compare the singular values or eigenvalues
+            if score_method is "wasserstein", or the shapes are different
         """
 
         self.iters = iters
@@ -141,14 +149,14 @@ class SimilarityTransformDist:
         self.A = None
         self.B = None
         self.group = group
+        self.wasserstein_compare = wasserstein_compare
 
     def fit(self, 
             A, 
             B, 
             iters = None, 
             lr = None, 
-            zero_pad = False,
-            group = None
+            group = None,
             ):
         """
         Computes the optimal matrix C over specified group
@@ -163,8 +171,6 @@ class SimilarityTransformDist:
             number of optimization steps, if None then resorts to saved self.iters
         lr : float or None
             learning rate, if None then resorts to saved self.lr
-        zero_pad : bool
-            if True, then the smaller matrix will be zero padded so its the same size
         group : {'SO(n)','O(n)', 'GL(n)'}
             specifies the group of matrices to optimize over
 
@@ -174,16 +180,7 @@ class SimilarityTransformDist:
         """
         assert A.shape[0] == A.shape[1]
         assert B.shape[0] == B.shape[1]
-        assert A.shape[0] == B.shape[1] or zero_pad
-
-        if isinstance(A,np.ndarray):
-            A = torch.from_numpy(A).float()
-        if isinstance(B,np.ndarray):
-            B = torch.from_numpy(B).float()
-       
-        if zero_pad and A.shape != B.shape: #no point zero-padding if already equal
-           A,B = pad_zeros(A,B,self.device)
-           
+    
         A = A.to(self.device)
         B = B.to(self.device)
         self.A,self.B = A,B
@@ -342,11 +339,36 @@ class SimilarityTransformDist:
         """
         score_method = self.score_method if score_method is None else score_method
         group = self.group if group is None else group
-        if zero_pad and A.shape != B.shape: 
-           A,B = pad_zeros(A,B,self.device)
+
+        if isinstance(A,np.ndarray):
+            A = torch.from_numpy(A).float()
+        if isinstance(B,np.ndarray):
+            B = torch.from_numpy(B).float()
+
+        assert A.shape[0] == B.shape[1] or self.wasserstein_compare is not None
+        if A.shape[0] != B.shape[0]:
+            if self.wasserstein_compare is None:
+                raise AssertionError("Matrices must be the same size unless using wasserstein distance")
+            else: #otherwise resort to L2 Wasserstein over singular or eigenvalues
+                print(f"resorting to wasserstein distance over {self.wasserstein_compare}")
+
+        if self.score_method == "wasserstein":
+            assert self.wasserstein_compare in {"sv","eig"}
+            if self.wasserstein_compare == "sv":
+                A = torch.svd(A).S
+                B = torch.svd(B).S
+            elif self.wasserstein_compare == "eig":
+                A = torch.linalg.eig(A).eigenvalues
+                B = torch.linalg.eig(B).eigenvalues
+            else:
+                raise AssertionError("wasserstein_compare must be 'sv' or 'eig'")
+            
+            score_star = wasserstein_distance(A.cpu().numpy(),B.cpu().numpy())
+
+        else:
        
-        self.fit(A, B,iters,lr,zero_pad,group)
-        score_star = self.score(self.A,self.B,score_method=score_method,group=group)
+            self.fit(A, B,iters,lr,zero_pad,group)
+            score_star = self.score(self.A,self.B,score_method=score_method,group=group)
 
         return score_star
 
