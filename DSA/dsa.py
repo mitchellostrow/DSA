@@ -20,7 +20,7 @@ class DSA:
                 lamb = 0.0,
                 send_to_cpu = True,
                 iters = 1500,
-                score_method: Literal["angular", "euclidean"] = "angular",
+                score_method: Literal["angular", "euclidean","wasserstein"] = "angular",
                 lr = 5e-3,
                 group: Literal["GL(n)", "O(n)", "SO(n)"] = "O(n)",
                 zero_pad = False,
@@ -29,7 +29,8 @@ class DSA:
                 reduced_rank_reg = False,
                 kernel=None,
                 num_centers=0.1,
-                svd_solver='full'
+                svd_solver='arnoldi',
+                wasserstein_compare = None
             ):
         """
         Parameters
@@ -104,6 +105,9 @@ class DSA:
         verbose : bool
             whether or not print when sections of the analysis is completed
         
+        wasserstein_compare : {'sv','eig',None}
+            specifies whether to compare the singular values or eigenvalues
+            if score_method is "wasserstein", or the shapes are different
         """
         self.X = X
         self.Y = Y
@@ -132,6 +136,7 @@ class DSA:
         self.group = group     
         self.reduced_rank_reg = reduced_rank_reg
         self.kernel = kernel
+        self.wasserstein_compare = wasserstein_compare
        
         if kernel is None:
             #get a list of all DMDs here
@@ -160,7 +165,7 @@ class DSA:
                     svd_solver=svd_solver,
                     ) for j,Xi in enumerate(dat)] for i,dat in enumerate(self.data)]
 
-        self.simdist = SimilarityTransformDist(iters,score_method,lr,device,verbose,group)
+        self.simdist = SimilarityTransformDist(iters,score_method,lr,device,verbose,group,wasserstein_compare)
 
     def check_method(self):
         '''
