@@ -19,9 +19,9 @@ class DSA:
                 rank_explained_variance = None,
                 lamb = 0.0,
                 send_to_cpu = True,
-                iters = 1000,
+                iters = 1500,
                 score_method: Literal["angular", "euclidean"] = "angular",
-                lr = 0.01,
+                lr = 5e-3,
                 group: Literal["GL(n)", "O(n)", "SO(n)"] = "O(n)",
                 zero_pad = False,
                 device = 'cpu',
@@ -115,10 +115,10 @@ class DSA:
             self.data = [self.X]
         else:
             self.data = [self.X, self.Y]
-
-        self.n_delays = self.broadcast_params(n_delays)
-        self.delay_interval = self.broadcast_params(delay_interval)
-        self.rank = self.broadcast_params(rank)
+        
+        self.n_delays = self.broadcast_params(n_delays,cast=int)
+        self.delay_interval = self.broadcast_params(delay_interval,cast=int)
+        self.rank = self.broadcast_params(rank,cast=int)
         self.rank_thresh = self.broadcast_params(rank_thresh)
         self.rank_explained_variance = self.broadcast_params(rank_explained_variance)
         self.lamb = self.broadcast_params(lamb)
@@ -192,7 +192,7 @@ class DSA:
         else:
             raise ValueError('unknown type of X')
 
-    def broadcast_params(self,param):
+    def broadcast_params(self,param,cast=None):
         '''
         aligns the dimensionality of the parameters with the data so it's one-to-one
         '''
@@ -218,6 +218,10 @@ class DSA:
                         out.append(param[i][:len(data)]) 
         else:
             raise ValueError("unknown type entered for parameter")
+
+        if cast is not None:
+            out = [[cast(x) for x in dat] for dat in out]
+
         return out
         
     def fit_dmds(self,
@@ -309,7 +313,7 @@ class DSA:
         ind2 = 1 - int(self.method == 'self-pairwise') 
         # 0 if self.pairwise (want to compare the set to itself)
 
-        sims = np.zeros((len(self.dmds[0]),len(self.dmds[ind2])))
+        self.sims = np.zeros((len(self.dmds[0]),len(self.dmds[ind2])))
         for i,dmd1 in enumerate(self.dmds[0]):
             for j,dmd2 in enumerate(self.dmds[ind2]):
                 if self.method == 'self-pairwise':
@@ -317,11 +321,12 @@ class DSA:
                         continue
                     if j > i:
                         continue
-                    sims[i,j] = sims[j,i] = self.simdist.fit_score(dmd1.A_v,dmd2.A_v,iters,lr,score_method,zero_pad=self.zero_pad)
-                else:
-                    sims[i,j] = self.simdist.fit_score(dmd1.A_v,dmd2.A_v,iters,lr,score_method,zero_pad=self.zero_pad)
+                if self.verbose:
+                    print(f'computing similarity between DMDs {i} and {j}')
+                self.sims[i,j] = self.sims[j,i] = self.simdist.fit_score(dmd1.A_v,dmd2.A_v,iters,lr,score_method,zero_pad=self.zero_pad)
+                
         
         if self.method == 'default':
-            return sims[0,0]
+            return self.sims[0,0]
 
-        return sims
+        return self.sims
