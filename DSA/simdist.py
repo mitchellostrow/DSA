@@ -367,7 +367,7 @@ class SimilarityTransformDist:
 
         else:
        
-            self.fit(A, B,iters,lr,zero_pad,group)
+            self.fit(A, B,iters,lr,group)
             score_star = self.score(self.A,self.B,score_method=score_method,group=group)
 
         return score_star
