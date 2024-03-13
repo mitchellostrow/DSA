@@ -5,6 +5,7 @@ from typing import Literal
 import numpy as np
 import torch.nn.utils.parametrize as parametrize
 from scipy.stats import wasserstein_distance
+import ot #optimal transport for multidimensional l2 wasserstein
 
 def pad_zeros(A,B,device):
 
@@ -355,15 +356,22 @@ class SimilarityTransformDist:
         if self.score_method == "wasserstein":
             assert self.wasserstein_compare in {"sv","eig"}
             if self.wasserstein_compare == "sv":
-                A = torch.svd(A).S
-                B = torch.svd(B).S
+                a = torch.svd(A).S.view(-1,1)
+                b = torch.svd(B).S.view(-1,1)
             elif self.wasserstein_compare == "eig":
-                A = torch.linalg.eig(A).eigenvalues
-                B = torch.linalg.eig(B).eigenvalues
+                a = torch.linalg.eig(A).eigenvalues
+                a = torch.vstack([a.real,a.imag]).T
+
+                b = torch.linalg.eig(B).eigenvalues
+                b = torch.vstack([b.real,b.imag]).T
             else:
                 raise AssertionError("wasserstein_compare must be 'sv' or 'eig'")
             
-            score_star = wasserstein_distance(A.cpu().numpy(),B.cpu().numpy())
+            M = ot.dist(a,b).numpy()
+            a,b = np.ones(a.shape[0])/a.shape[0],np.ones(b.shape[0])/b.shape[0]
+
+            score_star = ot.emd2(a,b,M) 
+            #wasserstein_distance(A.cpu().numpy(),B.cpu().numpy())
 
         else:
        
