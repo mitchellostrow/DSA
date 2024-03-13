@@ -13,7 +13,8 @@ setuptools.setup(
     install_requires=[
         'numpy>=1.24.0',
         'torch>=1.3.0',
-        'kooplearn>=1.0.6'
+        'kooplearn>=1.0.6',
+        'pot>=0.9.3'
     ],
     extras_require={
         'dev': [
