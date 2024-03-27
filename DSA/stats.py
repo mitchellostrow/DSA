@@ -43,7 +43,7 @@ def mae(x, y):
     x = torch_convert(x)
     y = torch_convert(y)
 
-    return float(torch.abs(x - y).mean())
+    return torch.abs(x - y).mean().item()
 
 def mase(true_vals, pred_vals):
     """
@@ -97,7 +97,7 @@ def mse(x, y):
     x = torch_convert(x)
     y = torch_convert(y)
 
-    return float(((x - y)**2).mean())
+    return ((x - y)**2).mean().item()
 
 def r2(true_vals, pred_vals):
     """
@@ -131,7 +131,7 @@ def r2(true_vals, pred_vals):
     SS_tot = torch.sum((true_vals - torch.mean(true_vals, dim=0))**2, dim=0)
 
     r2_vals = 1 - SS_res / SS_tot
-    return float(torch.mean(r2_vals))
+    return torch.mean(r2_vals).item()
 
 def correl(x, y):
     """
@@ -165,7 +165,7 @@ def correl(x, y):
     for dim in range(x.shape[-1]):
         correls[dim] = torch.corrcoef(torch.vstack((x[:, dim], y[:, dim])))[0, 1]
 
-    return float(correls.mean())
+    return correls.mean().item()
 
 def aic(x, y, rank, norm=True):
     """
@@ -194,7 +194,7 @@ def aic(x, y, rank, norm=True):
     y = torch_convert(y)
 
     N = np.prod(x.shape)
-    AIC = float(N*torch.log(((x - y)**2).sum()/N) + 2*(rank*rank + 1))
+    AIC = (N*torch.log(((x - y)**2).sum()/N) + 2*(rank*rank + 1)).item()
 
     if norm:
         AIC /= N
@@ -206,7 +206,7 @@ def log_mse(x,y,norm=True):
     y = torch_convert(y)
 
     N = np.prod(x.shape)
-    logmse = float(N*torch.log(((x - y)**2).sum()/N))
+    logmse = (N*torch.log(((x - y)**2).sum()/N)).item()
     if norm:
         logmse /= N
     return logmse

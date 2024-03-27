@@ -224,7 +224,7 @@ class DSA:
         else:
             raise ValueError("unknown type entered for parameter")
 
-        if cast is not None:
+        if cast is not None and param is not None:
             out = [[cast(x) for x in dat] for dat in out]
 
         return out
