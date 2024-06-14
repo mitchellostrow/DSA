@@ -98,7 +98,7 @@ def mse(x, y):
     y = torch_convert(y)
 
     return ((x - y)**2).mean().item()
-    
+
 def r2(true_vals, pred_vals):
     """
     Compute the R-squared value between two sets of data. For arrays with multiple observed dimensions,
@@ -194,27 +194,21 @@ def aic(x, y, rank, norm=True):
     y = torch_convert(y)
 
     N = np.prod(x.shape)
-<<<<<<< HEAD
-    AIC = N*torch.log(((x - y)**2).sum()/N) + 2*(rank*rank + 1)
-=======
+
     AIC = (N*torch.log(((x - y)**2).sum()/N) + 2*(rank*rank + 1)).item()
->>>>>>> 19d60b7e7ba8f64328d3ae9830bb5806c55d7849
 
     if norm:
         AIC /= N
 
     return AIC.item()
-
+    
 def log_mse(x,y,norm=True):
     x = torch_convert(x)
     y = torch_convert(y)
 
     N = np.prod(x.shape)
-<<<<<<< HEAD
-    logmse = N*torch.log(((x - y)**2).sum()/N)
-=======
     logmse = (N*torch.log(((x - y)**2).sum()/N)).item()
->>>>>>> 19d60b7e7ba8f64328d3ae9830bb5806c55d7849
+    
     if norm:
         logmse /= N
     return logmse.item()
