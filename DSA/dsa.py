@@ -4,6 +4,7 @@ from DSA.simdist import SimilarityTransformDist
 from typing import Literal
 import torch
 import numpy as np
+from omegaconf.listconfig import ListConfig
 
 class DSA:
     """
@@ -202,11 +203,11 @@ class DSA:
         aligns the dimensionality of the parameters with the data so it's one-to-one
         '''
         out = []
-        if isinstance(param,(int,float)) or param is None: #self.X has already been mapped to [self.X]
+        if isinstance(param,(int,float,np.integer)) or param is None: #self.X has already been mapped to [self.X]
             out.append([param] * len(self.X))
             if self.Y is not None:
                 out.append([param] * len(self.Y))
-        elif isinstance(param,(tuple,list,np.ndarray)):
+        elif isinstance(param,(tuple,list,np.ndarray,ListConfig)):
             if self.method == 'self-pairwise' and len(param) >= len(self.X):
                 out = [param]
             else:
@@ -224,7 +225,7 @@ class DSA:
         else:
             raise ValueError("unknown type entered for parameter")
 
-        if cast is not None:
+        if cast is not None and param is not None:
             out = [[cast(x) for x in dat] for dat in out]
 
         return out
