@@ -4,25 +4,25 @@ from kooplearn.models import Kernel, NystroemKernel
 import numpy as np
 import torch
 
-class KernelDMD(Kernel):
+class KernelDMD(NystroemKernel):
     def __init__(
             self,
             data,
             n_delays,
             kernel = RBF(),
-            num_centers=0.1,#not using this rn 
+            num_centers=0.1,
             delay_interval=1,
             rank=10,
             reduced_rank_reg=True,
             lamb=1e-10,
             verbose=False,
-            svd_solver='randomized',
+            svd_solver='arnoldi',
         ):
         """
         Subclass of kooplearn that uses a kernel to compute the DMD model.
-        This will also use Reduced Rank Regresion as opposed to Principal Component Regression (above)
+        This will also use Reduced Rank Regression as opposed to Principal Component Regression (above)
         """
-        super().__init__(kernel,reduced_rank_reg,rank,lamb,svd_solver)
+        super().__init__(kernel,reduced_rank_reg,rank,lamb,svd_solver,num_centers)
         self.n_delays = n_delays 
         self.context_window_len = n_delays + 1
         self.delay_interval = delay_interval
