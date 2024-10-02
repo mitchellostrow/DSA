@@ -127,8 +127,8 @@ def r2(true_vals, pred_vals):
         true_vals = true_vals.reshape(-1, true_vals.shape[-1])
         pred_vals = pred_vals.reshape(-1, pred_vals.shape[-1])
     
-    SS_res = torch.sum((true_vals - pred_vals)**2, dim=0)
-    SS_tot = torch.sum((true_vals - torch.mean(true_vals, dim=0))**2, dim=0)
+    SS_res = torch.sum((true_vals - pred_vals)**2, axis=0)
+    SS_tot = torch.sum((true_vals - torch.mean(true_vals, axis=0))**2, axis=0)
 
     r2_vals = 1 - SS_res / SS_tot
     return torch.mean(r2_vals).item()
@@ -194,22 +194,24 @@ def aic(x, y, rank, norm=True):
     y = torch_convert(y)
 
     N = np.prod(x.shape)
+
     AIC = (N*torch.log(((x - y)**2).sum()/N) + 2*(rank*rank + 1)).item()
 
     if norm:
         AIC /= N
 
-    return AIC
-
+    return AIC.item()
+    
 def log_mse(x,y,norm=True):
     x = torch_convert(x)
     y = torch_convert(y)
 
     N = np.prod(x.shape)
     logmse = (N*torch.log(((x - y)**2).sum()/N)).item()
+    
     if norm:
         logmse /= N
-    return logmse
+    return logmse.item()
 
 def compute_all_stats(true_vals, pred_vals, rank, norm=True):
     """

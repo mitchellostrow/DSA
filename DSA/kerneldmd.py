@@ -1,6 +1,6 @@
 from sklearn.gaussian_process.kernels import DotProduct, RBF
 from kooplearn.data import traj_to_contexts
-from kooplearn.models import NystroemKernel
+from kooplearn.models import Kernel, NystroemKernel
 import numpy as np
 import torch
 
@@ -14,16 +14,17 @@ class KernelDMD(NystroemKernel):
             delay_interval=1,
             rank=10,
             reduced_rank_reg=True,
-            lamb=None,
+            lamb=1e-10,
             verbose=False,
-            svd_solver='full',
+            svd_solver='arnoldi',
         ):
         """
         Subclass of kooplearn that uses a kernel to compute the DMD model.
-        This will also use Reduced Rank Regresion as opposed to Principal Component Regression (above)
+        This will also use Reduced Rank Regression as opposed to Principal Component Regression (above)
         """
         super().__init__(kernel,reduced_rank_reg,rank,lamb,svd_solver,num_centers)
-        self.n_delays = n_delays + 1
+        self.n_delays = n_delays 
+        self.context_window_len = n_delays + 1
         self.delay_interval = delay_interval
         self.verbose = verbose
         self.rank = rank
@@ -78,11 +79,22 @@ class KernelDMD(NystroemKernel):
         if isinstance(trajs,np.ndarray) and trajs.ndim == 2:
             trajs = trajs[np.newaxis,:,:]
         
-        data = [] #TODO: preallocate
-        for i in range(len(trajs)):
-            data.extend(traj_to_contexts(trajs[i],context_window_len=self.n_delays,time_lag=self.delay_interval))
-       
-        self.data = np.array(data)
+        data = traj_to_contexts(trajs[0],context_window_len=self.context_window_len,
+                                time_lag=self.delay_interval)
+        idx = np.zeros(data.idx_map.shape)
+        data.idx_map = np.concatenate((idx,data.idx_map),axis=-1)
+        for i in range(1,len(trajs)):
+            new_traj = traj_to_contexts(trajs[i],context_window_len=self.context_window_len,
+                time_lag=self.delay_interval)
+
+            data.data = np.concatenate((data.data,new_traj.data),axis=0)
+
+            #update index map for consistency
+            idx = np.zeros(new_traj.idx_map.shape) + 1 
+            new_traj.idx_map = np.concatenate((idx,new_traj.idx_map),axis=-1)
+            data.idx_map = np.concatenate((data.idx_map,new_traj.idx_map),axis=0)
+
+        self.data = data
 
         if self.verbose:
             print("Hankel matrix computed")
@@ -119,38 +131,48 @@ class KernelDMD(NystroemKernel):
         '''
         if reseed is None:
             reseed = 1
+        else:
+            raise NotImplementedError
         
         if isinstance(test_data, torch.Tensor):
             test_data = test_data.numpy()
         if isinstance(test_data,list):
             test_data = np.array(test_data)
 
-        isdim2 = False
-        if test_data.ndim == 2: #if we have a single trajectory
-            isdim2 = True
+        isdim2 = test_data.ndim == 2
+        if isdim2: #if we have a single trajectory
             test_data = test_data[np.newaxis, :, :]
 
         pred_data = np.zeros(test_data.shape)
-        pred_data[:, 0:self.n_delays-1] = test_data[:, 0:self.n_delays-1]
+        pred_data[:, 0:self.n_delays] = test_data[:, 0:self.n_delays]
 
         #here the hankel matrix should be (ntrials,time,n_delays,dim)
         self.compute_hankel(test_data)
-        #reshape into the right 4 dimensions
-        test_data = self.data.reshape(test_data.shape[0],test_data.shape[1]-self.n_delays+1,self.n_delays,test_data.shape[2])
-        
-        #get the test data into the format of the hankel matrix
-        #apply the nystroem predict function
-        for t in range(self.n_delays, test_data.shape[1]):
-            if t % reseed == 0:
-                #need to ignore the current value which is what we're trying to predict
-                #hence the -1 at the end
-                curr = test_data[:,t-1:t,:-1].reshape(-1,self.n_delays-1,test_data.shape[-1])
-                pred_data[:,t] = super().predict(curr)
-            else:
-                past = pred_data[:,t-self.n_delays+1:t]
-                pred_data[:,t] = super().predict(past)
 
-        if isdim2:
-            pred_data = pred_data[0]
+        pred = super().predict(self.data)
+        pred = pred.reshape(test_data.shape[0],test_data.shape[1]-self.n_delays,test_data.shape[2])
+        pred_data[:,self.n_delays:] = pred
 
         return pred_data
+        #TODO: integrate tailbiting
+        #split into original trajectories so pred_data matches test_data
+        # import ipdb; ipdb.set_trace()
+
+        # #reshape into the right 4 dimensions
+        # test_data = self.data.data.reshape(test_data.shape[0],test_data.shape[1]-self.n_delays,self.context_window_len,test_data.shape[2])
+        
+        # #get the test data into the format of the hankel matrix
+        # #apply the nystroem predict function
+        # for t in range(self.n_delays, test_data.shape[1]):
+        #     if t % reseed == 0:
+        #         #need to ignore the current value which is what we're trying to predict
+        #         #hence the -1 at the end
+        #         curr = test_data[:,t-1:t,:-1].reshape(-1,self.n_delays,test_data.shape[-1])
+        #         pred_data[:,t] = super().predict(curr)
+        #     else:
+        #         past = pred_data[:,t-self.context_window_len:t]
+        #         pred_data[:,t] = super().predict(past)
+
+        # if isdim2:
+        #     pred_data = pred_data[0]
+
