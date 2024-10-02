@@ -209,7 +209,7 @@ class DMD:
 
         if self.verbose:
             print("Computing SVD on Hankel matrix ...")
-        if self.ntrials > 1: #flatten across trials for 3d
+        if self.H.ndim == 3: #flatten across trials for 3d
             H = self.H.reshape(self.H.shape[0] * self.H.shape[1], self.H.shape[2])
         else:
             H = self.H
