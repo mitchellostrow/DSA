@@ -31,7 +31,7 @@ class DSA:
                 kernel=None,
                 num_centers=0.1,
                 svd_solver='arnoldi',
-                wasserstein_compare = None
+                wasserstein_compare: Literal['sv','eig',None] = None
             ):
         """
         Parameters
@@ -323,9 +323,7 @@ class DSA:
         for i,dmd1 in enumerate(self.dmds[0]):
             for j,dmd2 in enumerate(self.dmds[ind2]):
                 if self.method == 'self-pairwise':
-                    if i == j: 
-                        continue
-                    if j > i:
+                    if j >= i:
                         continue
                 if self.verbose:
                     print(f'computing similarity between DMDs {i} and {j}')

@@ -367,6 +367,8 @@ class SimilarityTransformDist:
             else:
                 raise AssertionError("wasserstein_compare must be 'sv' or 'eig'")
             
+            a = a.cpu()
+            b = b.cpu()
             M = ot.dist(a,b).numpy()
             a,b = np.ones(a.shape[0])/a.shape[0],np.ones(b.shape[0])/b.shape[0]
 
