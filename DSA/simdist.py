@@ -198,7 +198,8 @@ class SimilarityTransformDist:
         if group == "O(n)":
             #permute the first row and column of B then rerun the optimization
             P = torch.eye(B.shape[0],device=self.device)
-            P[[0, 1], :] = P[[1, 0], :]
+            if P.shape[0] > 1:
+                P[[0, 1], :] = P[[1, 0], :]
             losses, C_star, sim_net = self.optimize_C(A,
                                                     P @ B @ P.T,
                                                     lr,iters,
@@ -366,11 +367,12 @@ class SimilarityTransformDist:
                 b = torch.vstack([b.real,b.imag]).T
             else:
                 raise AssertionError("wasserstein_compare must be 'sv' or 'eig'")
-            
-            a = a.cpu()
-            b = b.cpu()
-            M = ot.dist(a,b).numpy()
-            a,b = np.ones(a.shape[0])/a.shape[0],np.ones(b.shape[0])/b.shape[0]
+            device = a.device
+            a = a#.cpu()
+            b = b#.cpu()
+            M = ot.dist(a,b)#.numpy()
+            a,b = torch.ones(a.shape[0])/a.shape[0],torch.ones(b.shape[0])/b.shape[0]
+            a,b = a.to(device),b.to(device)
 
             score_star = ot.emd2(a,b,M) 
             #wasserstein_distance(A.cpu().numpy(),B.cpu().numpy())
