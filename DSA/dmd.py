@@ -65,7 +65,8 @@ class DMD:
             lamb=0,
             device='cpu',
             verbose=False,
-            send_to_cpu=False
+            send_to_cpu=False,
+            steps_ahead=1
         ):
         """
         Parameters
@@ -115,6 +116,9 @@ class DMD:
         send_to_cpu: bool
             If True, will send all tensors in the object back to the cpu after everything is computed.
             This is implemented to prevent gpu memory overload when computing multiple DMDs.
+
+        steps_ahead: int
+            The number of time steps ahead to predict. Defaults to 1.
         """
 
         self.device = device
@@ -129,7 +133,8 @@ class DMD:
         self.lamb = lamb
         self.verbose = verbose
         self.send_to_cpu = send_to_cpu
-        
+        self.steps_ahead = steps_ahead
+
         # Hankel matrix
         self.H = None
 
@@ -250,12 +255,12 @@ class DMD:
             V = V.reshape(self.H.shape)
 
             #first reshape back into Hankel shape, separated by trials
-            newshape = (self.H.shape[0]*(self.H.shape[1]-1),self.H.shape[2])
-            self.Vt_minus = V[:,:-1].reshape(newshape)
-            self.Vt_plus = V[:,1:].reshape(newshape)
+            newshape = (self.H.shape[0]*(self.H.shape[1]-self.steps_ahead),self.H.shape[2])
+            self.Vt_minus = V[:,:-self.steps_ahead].reshape(newshape)
+            self.Vt_plus = V[:,self.steps_ahead:].reshape(newshape)
         else:
-            self.Vt_minus = V[:-1]
-            self.Vt_plus = V[1:]
+            self.Vt_minus = V[:-self.steps_ahead]
+            self.Vt_plus = V[self.steps_ahead:]
 
 
         if self.verbose:
@@ -389,6 +394,7 @@ class DMD:
             lamb=None,
             device=None,
             verbose=None,
+            steps_ahead=None
         ):
         """
         Parameters
@@ -440,9 +446,13 @@ class DMD:
         verbose: bool
             If True, print statements will be provided about the progress of the fitting procedure. 
             Defaults to None - provide only if you want to override the value from the init.
+
+        steps_ahead: int
+            The number of time steps ahead to predict. Defaults to 1.
         
         """
         # if parameters are provided, overwrite them from the init
+        self.steps_ahead = self.steps_ahead if steps_ahead is None else steps_ahead
         self.device = self.device if device is None else device
         self.verbose = self.verbose if verbose is None else verbose
     
@@ -488,20 +498,21 @@ class DMD:
         if ndim == 2:
             test_data = test_data.unsqueeze(0)
         H_test = embed_signal_torch(test_data, self.n_delays, self.delay_interval)
+        steps_ahead = self.steps_ahead if self.steps_ahead is not None else 1
 
         if reseed is None:
             reseed = 1
 
         H_test_havok_dmd = torch.zeros(H_test.shape).to(self.device)
-        H_test_havok_dmd[:, 0] = H_test[:, 0]
+        H_test_havok_dmd[:, :steps_ahead] = H_test[:, :steps_ahead]
 
         A = self.A_havok_dmd.unsqueeze(0)
-        for t in range(1, H_test.shape[1]):
+        for t in range(steps_ahead, H_test.shape[1]):
             if t % reseed == 0:
-                H_test_havok_dmd[:, t] = (A @ H_test[:, t - 1].transpose(-2, -1)).transpose(-2, -1)
+                H_test_havok_dmd[:, t] = (A @ H_test[:, t - steps_ahead].transpose(-2, -1)).transpose(-2, -1)
             else:
-                H_test_havok_dmd[:, t] = (A @ H_test_havok_dmd[:, t - 1].transpose(-2, -1)).transpose(-2, -1)
-        pred_data = torch.hstack([test_data[:, :(self.n_delays - 1)*self.delay_interval + 1], H_test_havok_dmd[:, 1:, :self.n]])
+                H_test_havok_dmd[:, t] = (A @ H_test_havok_dmd[:, t - steps_ahead].transpose(-2, -1)).transpose(-2, -1)
+        pred_data = torch.hstack([test_data[:, :(self.n_delays - 1)*self.delay_interval + steps_ahead], H_test_havok_dmd[:, steps_ahead:, :self.n]])
 
         if ndim == 2:
             pred_data = pred_data[0]
