@@ -81,8 +81,8 @@ class KernelDMD(NystroemKernel):
         
         data = traj_to_contexts(trajs[0],context_window_len=self.context_window_len,
                                 time_lag=self.delay_interval)
-        idx = np.zeros(data.idx_map.shape)
-        data.idx_map = np.concatenate((idx,data.idx_map),axis=-1)
+        # idx = np.zeros(data.idx_map.shape)
+        # data.idx_map = np.concatenate((idx,data.idx_map),axis=-1)
         for i in range(1,len(trajs)):
             new_traj = traj_to_contexts(trajs[i],context_window_len=self.context_window_len,
                 time_lag=self.delay_interval)
@@ -90,9 +90,9 @@ class KernelDMD(NystroemKernel):
             data.data = np.concatenate((data.data,new_traj.data),axis=0)
 
             #update index map for consistency
-            idx = np.zeros(new_traj.idx_map.shape) + 1 
-            new_traj.idx_map = np.concatenate((idx,new_traj.idx_map),axis=-1)
-            data.idx_map = np.concatenate((data.idx_map,new_traj.idx_map),axis=0)
+            # idx = np.zeros(new_traj.idx_map.shape) + 1 
+            # new_traj.idx_map = np.concatenate((idx,new_traj.idx_map),axis=-1)
+            # data.idx_map = np.concatenate((data.idx_map,new_traj.idx_map),axis=0)
 
         self.data = data
 
@@ -116,7 +116,7 @@ class KernelDMD(NystroemKernel):
 
     def predict(
         self,
-        test_data,
+        test_data=None,
         reseed=None,
         ):
         '''
@@ -129,6 +129,8 @@ class KernelDMD(NystroemKernel):
              (self.n_delays - 1)*self.delay_interval + 1 time steps of the generated predictions are by construction
              identical to the test_data.
         '''
+        if test_data is None:
+            test_data = self.data
         if reseed is None:
             reseed = 1
         else:
@@ -153,7 +155,7 @@ class KernelDMD(NystroemKernel):
         pred = pred.reshape(test_data.shape[0],test_data.shape[1]-self.n_delays,test_data.shape[2])
         pred_data[:,self.n_delays:] = pred
 
-        return pred_data
+        return pred_data.squeeze()
         #TODO: integrate tailbiting
         #split into original trajectories so pred_data matches test_data
         # import ipdb; ipdb.set_trace()
