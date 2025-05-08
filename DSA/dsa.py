@@ -274,7 +274,7 @@ class DSA:
 
         return dmds
 
-    def fit_score(self):
+    def fit_score(self, parallel=False, n_job=12):
         """
         Standard fitting function for both DMDs and PoVF
         
@@ -288,12 +288,12 @@ class DSA:
             data matrix of the similarity scores between the specific sets of data     
         """
         for dmd_sets in self.dmds:
-            for dmd in dmd_sets:
+            for dmd in dmd_sets: # Hankel matrix
                 dmd.fit()
 
-        return self.score()
+        return self.score(parallel=parallel, n_job=n_job)
     
-    def score(self,iters=None,lr=None,score_method=None):
+    def score(self,iters=None,lr=None,score_method=None, parallel=False, n_job=12):
         """
         Rescore DSA with precomputed dmds if you want to try again
 
@@ -320,21 +320,70 @@ class DSA:
         # 0 if self.pairwise (want to compare the set to itself)
 
         self.sims = np.zeros((len(self.dmds[0]),len(self.dmds[ind2])))
-        for i,dmd1 in enumerate(self.dmds[0]):
-            for j,dmd2 in enumerate(self.dmds[ind2]):
-                if self.method == 'self-pairwise':
-                    if j >= i:
-                        continue
-                if self.verbose:
-                    print(f'computing similarity between DMDs {i} and {j}')
-                
-                self.sims[i,j] = self.simdist.fit_score(dmd1.A_v,dmd2.A_v,iters,lr,score_method,zero_pad=self.zero_pad)
 
-                if self.method == 'self-pairwise':
-                    self.sims[j,i] = self.sims[i,j]
-                
+
+        if not parallel:
+            for i,dmd1 in enumerate(self.dmds[0]):
+                for j,dmd2 in enumerate(self.dmds[ind2]):
+                    if self.method == 'self-pairwise':
+                        if j >= i:
+                            continue
+                    if self.verbose:
+                        print(f'computing similarity between DMDs {i} and {j}')
+                    
+                    self.sims[i,j] = self.simdist.fit_score(dmd1.A_v,dmd2.A_v,iters,lr,score_method,zero_pad=self.zero_pad)
+
+                    if self.method == 'self-pairwise':
+                        self.sims[j,i] = self.sims[i,j]
+                    
+            
+            if self.method == 'default':
+                return self.sims[0,0]
         
-        if self.method == 'default':
-            return self.sims[0,0]
+        else:
+            from joblib import Parallel, delayed
+            len_dmds0 = len(self.dmds[0])
+            len_dmds_ind2 = len(self.dmds[ind2])
+            
+            # Precompute A_v arrays to reduce overhead
+            dmds0_Av = [dmd.A_v for dmd in self.dmds[0]]
+            dmds_ind2_Av = [dmd.A_v for dmd in self.dmds[ind2]]
+
+            # Generate all (i,j) pairs to process
+            pairs = []
+            if self.method == 'self-pairwise':
+                pairs = [(i, j) for i in range(len_dmds0) for j in range(i)]
+            else:
+                pairs = [(i, j) for i in range(len_dmds0) for j in range(len_dmds_ind2)]
+
+            # Prepare tasks with necessary data
+            tasks = [
+                (
+                    dmds0_Av[i],
+                    dmds_ind2_Av[j],
+                    iters,
+                    lr,
+                    score_method,
+                    self.zero_pad,
+                    self.simdist
+                )
+                for i, j in pairs
+            ]
+
+            # Parallel computation # TODO CUDA error: out of memory
+            results = Parallel(n_jobs=n_job, verbose=self.verbose)(
+                delayed(compute_sim)(*task) for task in tasks
+            )
+
+            # Populate similarity matrix
+            for idx, (i, j) in enumerate(pairs):
+                self.sims[i, j] = results[idx]
+                if self.method == 'self-pairwise':
+                    self.sims[j, i] = results[idx]
 
         return self.sims
+    
+
+def compute_sim(a1, a2, iters, lr, score_method, zero_pad, simdist):
+    """Helper function to compute similarity for a single pair"""
+    return simdist.fit_score(a1, a2, iters, lr, score_method, zero_pad=zero_pad)
