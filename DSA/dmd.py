@@ -527,3 +527,12 @@ class DMD:
             if isinstance(v, torch.Tensor):
                 self.__dict__[k] = v.to(device)
 
+
+    def project_onto_modes(self):
+        eigvals, eigvecs = torch.linalg.eigh(self.A_v)
+        #project Vt_minus onto the eigenvectors
+        projections = self.V[:,:self.rank] @ eigvecs
+        projections = projections.reshape(self.data.shape[0],self.data.shape[1]-self.n_delays+1,-1)
+
+        #get the data that matches the shape of the original data
+        return projections, self.data[:,:-self.n_delays+1]
