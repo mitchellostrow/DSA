@@ -1,5 +1,5 @@
 from DSA.dmd import DMD
-from DSA.kerneldmd import KernelDMD
+#from DSA.kerneldmd import KernelDMD
 from DSA.simdist import SimilarityTransformDist
 from typing import Literal
 import torch
@@ -19,6 +19,7 @@ class DSA:
                 rank_thresh=None,
                 rank_explained_variance = None,
                 lamb = 0.0,
+                steps_ahead = 1,
                 send_to_cpu = True,
                 iters = 1500,
                 score_method: Literal["angular", "euclidean","wasserstein"] = "angular",
@@ -127,6 +128,7 @@ class DSA:
         self.rank_thresh = self.broadcast_params(rank_thresh)
         self.rank_explained_variance = self.broadcast_params(rank_explained_variance)
         self.lamb = self.broadcast_params(lamb)
+        self.steps_ahead = self.broadcast_params(steps_ahead,cast=int)
         self.send_to_cpu = send_to_cpu
         self.iters = iters
         self.score_method = score_method
@@ -149,6 +151,7 @@ class DSA:
                     rank_explained_variance=self.rank_explained_variance[i][j],
                     reduced_rank_reg=self.reduced_rank_reg,
                     lamb=self.lamb[i][j],
+                    steps_ahead = self.steps_ahead[i][j],
                     device=self.device,
                     verbose=self.verbose,
                     send_to_cpu=self.send_to_cpu) for j,Xi in enumerate(dat)] for i,dat in enumerate(self.data)]
