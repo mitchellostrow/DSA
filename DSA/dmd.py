@@ -163,6 +163,8 @@ class DMD:
             self.window = self.data.shape[0]
             self.n = self.data.shape[1]
             self.ntrials = 1
+            
+        return data
         
     def compute_hankel(
             self,
