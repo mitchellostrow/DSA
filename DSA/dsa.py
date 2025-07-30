@@ -19,6 +19,7 @@ class DSA:
                 rank_thresh=None,
                 rank_explained_variance = None,
                 lamb = 0.0,
+                steps_ahead=1,
                 send_to_cpu = True,
                 iters = 1500,
                 score_method: Literal["angular", "euclidean","wasserstein"] = "angular",
@@ -69,6 +70,9 @@ class DSA:
         
         lamb : float
             L-1 regularization parameter in DMD fit
+
+        steps_ahead: int
+            number of steps ahead to predict in DMD
         
         send_to_cpu: bool
             If True, will send all tensors in the object back to the cpu after everything is computed.
@@ -127,6 +131,7 @@ class DSA:
         self.rank_thresh = self.broadcast_params(rank_thresh)
         self.rank_explained_variance = self.broadcast_params(rank_explained_variance)
         self.lamb = self.broadcast_params(lamb)
+        self.steps_ahead = self.broadcast_params(steps_ahead)
         self.send_to_cpu = send_to_cpu
         self.iters = iters
         self.score_method = score_method
@@ -151,6 +156,7 @@ class DSA:
                     lamb=self.lamb[i][j],
                     device=self.device,
                     verbose=self.verbose,
+                    steps_ahead=self.steps_ahead[i][j],
                     send_to_cpu=self.send_to_cpu) for j,Xi in enumerate(dat)] for i,dat in enumerate(self.data)]
         else:
              #get a list of all DMDs here

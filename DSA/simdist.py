@@ -232,8 +232,8 @@ class SimilarityTransformDist:
         # scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.999)
 
         losses = []
-        A /= torch.linalg.norm(A)
-        B /= torch.linalg.norm(B)
+        A = A / torch.linalg.norm(A)
+        B = B / torch.linalg.norm(B)
         for _ in range(iters):
             # Zero the gradients of the optimizer.
             optimizer.zero_grad()      
@@ -293,17 +293,31 @@ class SimilarityTransformDist:
             Cinv = torch.linalg.inv(C)
         else:
             raise AssertionError("Need proper group name")
-        if score_method == 'angular':    
+        if score_method == 'angular':   
             num = torch.trace(A.T @ C @ B @ Cinv) 
             den = torch.norm(A,p = 'fro')*torch.norm(B,p = 'fro')
-            score = torch.arccos(num/den).cpu().numpy()
-            if np.isnan(score): #around -1 and 1, we sometimes get NaNs due to arccos
-                if num/den < 0:
-                    score = np.pi
-                else:
-                    score = 0
+            score_tensor = torch.arccos(num / den)
+ 
+            if score_tensor.requires_grad:
+                pi_tensor = torch.tensor(np.pi, device=score_tensor.device, dtype=score_tensor.dtype)
+                zero_tensor = torch.tensor(0.0, device=score_tensor.device, dtype=score_tensor.dtype)
+               
+                score = torch.where(
+                    torch.isnan(score_tensor),
+                    torch.where((num / den) < 0, pi_tensor, zero_tensor),
+                    score_tensor
+                )
+            else:
+                score = score_tensor.detach().cpu().numpy()
+                if np.isnan(score):
+                    score = np.pi if (num / den).item() < 0 else 0.0
         else:
-            score = torch.norm(A - C @ B @ Cinv,p='fro').cpu().numpy().item() #/ A.numpy().size
+            norm_tensor = torch.norm(A - C @ B @ Cinv, p='fro')
+            if norm_tensor.requires_grad:
+                score = norm_tensor
+            else:
+                score = norm_tensor.detach().cpu().numpy().item()
+
     
         return score
     
@@ -351,7 +365,7 @@ class SimilarityTransformDist:
         if A.shape[0] != B.shape[0]:
             if self.wasserstein_compare is None:
                 raise AssertionError("Matrices must be the same size unless using wasserstein distance")
-            else: #otherwise resort to L2 Wasserstein over singular or eigenvalues
+            elif self.verbose: #otherwise resort to L2 Wasserstein over singular or eigenvalues
                 print(f"resorting to wasserstein distance over {self.wasserstein_compare}")
 
         if self.score_method == "wasserstein":

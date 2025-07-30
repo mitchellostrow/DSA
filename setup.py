@@ -11,10 +11,11 @@ setuptools.setup(
     description="Dynamical Similarity Analysis",
     packages=setuptools.find_packages(),
     install_requires=[
-        'numpy>=1.24.0',
-        'torch>=1.3.0',
+        'numpy>=1.24.0,<2',
+        'torch>=1.3.0', 
         'kooplearn>=1.1.0',
-        'pot'
+        'pot',
+        'omegaconf',
     ],
     extras_require={
         'dev': [

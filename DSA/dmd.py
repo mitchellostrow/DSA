@@ -154,15 +154,12 @@ class DMD:
         if isinstance(data, np.ndarray):
             data = torch.from_numpy(data)
         self.data = data
+        if self.data.ndim == 2:
+            self.data = self.data.unsqueeze(0)
         # create attributes for the data dimensions
-        if self.data.ndim == 3:
-            self.ntrials = self.data.shape[0]
-            self.window = self.data.shape[1]
-            self.n = self.data.shape[2]
-        else:
-            self.window = self.data.shape[0]
-            self.n = self.data.shape[1]
-            self.ntrials = 1
+        self.ntrials = self.data.shape[0]
+        self.window = self.data.shape[1]
+        self.n = self.data.shape[2]
         
     def compute_hankel(
             self,
@@ -349,6 +346,20 @@ class DMD:
         
         if self.verbose:
             print("Least squares complete! \n") 
+    
+    def get_projections_onto_modes(self):
+        """
+        Returns the projection of each time point onto each mode 
+        """
+        assert self.A_v is not None, "DMD must be fit before projecting onto modes"
+        eigvals, eigvecs = torch.linalg.eigh(self.A_v)
+        #project Vt_minus onto the eigenvectors
+        projections = self.V[:,:self.rank] @ eigvecs
+        projections = projections.reshape(self.data.shape[0],self.data.shape[1]-self.n_delays+1,-1)
+        
+        #get the data that matches the shape of the original data
+        return projections, self.data[:,:self.n_delays-1]
+
 
     def compute_proj_mat(self,lamb=None):
         if self.verbose:
@@ -383,6 +394,36 @@ class DMD:
         if self.verbose:
             print("Reduced Rank Regression complete! \n")
 
+    def substitute_shift_operator(self):
+        '''  
+        the shift operator is a rectangular matrix of shape [dim*(n_delays-nshift),dim*n_delays]
+        where the first dim*(n_delays-nshift) rows are the identity matrix
+        and the last dim*nshift rows are zeros
+        this can be substituted for the bottom of the Havok matrix to predict nshift steps ahead
+        why? it can reduce noise
+        '''
+        if self.A_havok_dmd is None:
+            if self.verbose:
+                print("Havok DMD must be computed before substituting the shift operator")
+            return
+        if self.steps_ahead // self.delay_interval != self.steps_ahead / self.delay_interval:
+            if self.verbose: 
+                print("steps_ahead / delay_interval must be an integer to substitute the shift operator")
+            return
+            
+        nshift = self.steps_ahead // self.delay_interval
+
+        if self.n*(self.n_delays - nshift) <= 0 :
+            if self.verbose:
+                print("n*(n_delays - nshift) must be greater than 0 to substitute the shift operator")
+            return
+        # create the shift operator
+   
+        shift_operator = torch.eye(self.n*(self.n_delays - nshift)).to(self.device)
+        shift_operator = torch.vstack([shift_operator, torch.zeros(self.n*nshift,self.n*(self.n_delays - nshift)).to(self.device)]).T
+
+        self.A_havok_dmd[self.n*nshift:,:] = shift_operator
+
     def fit(
             self,
             data=None,
@@ -394,7 +435,8 @@ class DMD:
             lamb=None,
             device=None,
             verbose=None,
-            steps_ahead=None
+            steps_ahead=None,
+            substitute_shift_operator=False
         ):
         """
         Parameters
@@ -449,12 +491,19 @@ class DMD:
 
         steps_ahead: int
             The number of time steps ahead to predict. Defaults to 1.
+
+        substitute_shift_operator: bool
+            If true, will substitute the bottom of the Havok matrix with the shift operator
+            Note that this will only work if steps_ahead / delay_interval is an integer
         
         """
         # if parameters are provided, overwrite them from the init
         self.steps_ahead = self.steps_ahead if steps_ahead is None else steps_ahead
         self.device = self.device if device is None else device
         self.verbose = self.verbose if verbose is None else verbose
+        rank = self.rank if rank is None else rank
+        rank_thresh = self.rank_thresh if rank_thresh is None else rank_thresh
+        rank_explained_variance = self.rank_explained_variance if rank_explained_variance is None else rank_explained_variance
     
         self.compute_hankel(data, n_delays, delay_interval)
         self.compute_svd()
@@ -465,7 +514,9 @@ class DMD:
             self.compute_reduced_rank_regression(lamb)
         else:
             self.recalc_rank(rank,rank_thresh,rank_explained_variance)
-            self.compute_havok_dmd(lamb)        
+            self.compute_havok_dmd(lamb)
+            if substitute_shift_operator:
+                self.substitute_shift_operator()        
         
         if self.send_to_cpu:
             self.all_to_device('cpu') #send back to the cpu to save memory
