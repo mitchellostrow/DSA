@@ -143,7 +143,8 @@ class DSA:
         self.reduced_rank_reg = reduced_rank_reg
         self.kernel = kernel
         self.wasserstein_compare = wasserstein_compare
-       
+        self.steps_ahead = self.broadcast_params(steps_ahead,cast=int)
+        
         if kernel is None:
             #get a list of all DMDs here
             self.dmds = [[DMD(Xi,
@@ -157,21 +158,9 @@ class DSA:
                     steps_ahead = self.steps_ahead[i][j],
                     device=self.device,
                     verbose=self.verbose,
-                    steps_ahead=self.steps_ahead[i][j],
                     send_to_cpu=self.send_to_cpu) for j,Xi in enumerate(dat)] for i,dat in enumerate(self.data)]
         else:
-             #get a list of all DMDs here
-            self.dmds = [[KernelDMD(Xi,
-                    self.n_delays[i][j],
-                    kernel=self.kernel,
-                    num_centers=num_centers,
-                    delay_interval=self.delay_interval[i][j],
-                    rank=self.rank[i][j],
-                    reduced_rank_reg=self.reduced_rank_reg,
-                    lamb=self.lamb[i][j],
-                    verbose=self.verbose,
-                    svd_solver=svd_solver,
-                    ) for j,Xi in enumerate(dat)] for i,dat in enumerate(self.data)]
+            raise ValueError('KernelDMD not implemented yet')
 
         self.simdist = SimilarityTransformDist(iters,score_method,lr,device,verbose,group,wasserstein_compare)
 

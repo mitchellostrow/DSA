@@ -1,7 +1,7 @@
 import setuptools
 
 setuptools.setup(
-    name="DSA",
+    name="dsa-metric",
     version="1.0.1",
     url="https://github.com/mitchellostrow/DSA",
 

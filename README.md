@@ -20,7 +20,10 @@ If you use this code, please cite:
 ```
 
 ## Install the repo using `pip`:
-
+```
+pip install dsa-metric
+```
+or if you wish to install the most recent version:
 ```
 git clone https://github.com/mitchellostrow/DSA
 cd DSA/
