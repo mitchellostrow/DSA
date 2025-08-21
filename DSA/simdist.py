@@ -112,7 +112,7 @@ class SimilarityTransformDist:
                 device: Literal["cpu","cuda"] = 'cpu',
                 verbose = False,
                 group: Literal["O(n)","SO(n)","GL(n)"] = "O(n)",
-                wasserstein_compare = None
+                wasserstein_compare = 'eig'
                 ):
         """
         Parameters
@@ -136,7 +136,7 @@ class SimilarityTransformDist:
         group : {'SO(n)','O(n)', 'GL(n)'}
             specifies the group of matrices to optimize over
 
-        wasserstein_compare : {'sv','eig',None}
+        wasserstein_compare : {,'eig',None}
             specifies whether to compare the singular values or eigenvalues
             if score_method is "wasserstein", or the shapes are different
         """
@@ -327,7 +327,6 @@ class SimilarityTransformDist:
                 iters = None, 
                 lr = None,
                 score_method = None,
-                zero_pad = True,
                 group = None):
         """
         for efficiency, computes the optimal matrix and returns the score 
@@ -369,18 +368,18 @@ class SimilarityTransformDist:
                 print(f"resorting to wasserstein distance over {self.wasserstein_compare}")
 
         if self.score_method == "wasserstein":
-            assert self.wasserstein_compare in {"sv","eig"}
-            if self.wasserstein_compare == "sv":
-                a = torch.svd(A).S.view(-1,1)
-                b = torch.svd(B).S.view(-1,1)
-            elif self.wasserstein_compare == "eig":
-                a = torch.linalg.eig(A).eigenvalues
-                a = torch.vstack([a.real,a.imag]).T
+            # assert self.wasserstein_compare in {"sv","eig"}
+            # if self.wasserstein_compare == "sv":
+            #     a = torch.svd(A).S.view(-1,1)
+            #     b = torch.svd(B).S.view(-1,1)
+            # if self.wasserstein_compare == "eig":
+            a = torch.linalg.eig(A).eigenvalues
+            a = torch.vstack([a.real,a.imag]).T
 
-                b = torch.linalg.eig(B).eigenvalues
-                b = torch.vstack([b.real,b.imag]).T
-            else:
-                raise AssertionError("wasserstein_compare must be 'sv' or 'eig'")
+            b = torch.linalg.eig(B).eigenvalues
+            b = torch.vstack([b.real,b.imag]).T
+            # else:
+            #     raise AssertionError("wasserstein_compare must be or 'eig'")
             device = a.device
             a = a#.cpu()
             b = b#.cpu()
