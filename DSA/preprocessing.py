@@ -4,7 +4,6 @@ from sklearn.manifold import Isomap, LocallyLinearEmbedding
 from sklearn.decomposition import PCA
 from sklearn.pipeline import make_pipeline
 from sklearn.kernel_approximation import Nystroem
-from umap import UMAP
 from DSA.dmd import embed_signal_torch
 from scipy.signal import convolve
 
@@ -214,6 +213,12 @@ def nonlinear_dimensionality_reduction(
         pca = PCA(n_components=n_components)
         model = make_pipeline(nystroem, pca)
     elif method.lower() == "umap":
+        #assert that umap is installed
+        try:
+            from umap import UMAP
+        except ImportError:
+            raise ImportError("umap is not installed. Please install it with `pip install umap-learn`")
+        
         model = UMAP(n_components=n_components, **kwargs)
     else:
         raise ValueError(
