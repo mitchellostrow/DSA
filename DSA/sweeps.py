@@ -1,8 +1,8 @@
 import numpy as np
 from tqdm import tqdm
-from DSA.dmd import DMD
-from DSA.stats import measure_nonnormality_transpose, compute_all_stats, measure_transient_growth
-from DSA.resdmd import compute_residuals
+from .dmd import DMD
+from .stats import measure_nonnormality_transpose, compute_all_stats, measure_transient_growth
+from .resdmd import compute_residuals
 import matplotlib.pyplot as plt
 from typing import Literal
 
@@ -110,11 +110,11 @@ def sweep_ranks_delays(
             if isinstance(pred,list):
                 pred = np.concatenate(pred,axis=0)
                 test_data_err = np.concatenate(test_data_err,axis=0)
-            if featurize and ndim is not None:
-                pred = pred[:, :, -ndim:]
-                stats = compute_all_stats(pred, test_data_err[:, :, -ndim:], dmd.rank)
-            else:
-                stats = compute_all_stats(test_data_err, pred, dmd.rank)
+            # if featurize and ndim is not None:
+                # pred = pred[:, :, -ndim:]
+                # stats = compute_all_stats(pred, test_data_err[:, :, -ndim:], dmd.rank)
+            # else:
+            stats = compute_all_stats(test_data_err, pred, dmd.rank)
             aic = stats["AIC"]
             mase = stats["MASE"]
             if return_mse:
@@ -323,10 +323,12 @@ def plot_sweep_results_all_error_types(
     figsize=(2, 4),
     xscale='log',
     aic_scale='symlog',
+    mase_scale = 'log',
     plot_herror=False,
     new_plot_reseeds=False,
     cmap="gist_gray",
-    metrics_order=['AIC','MASE','MSE']
+    metrics_order=['AIC','MASE','MSE'],
+    pretty_yticks=False
 ):
     """
     Plot all error types from sweep_ranks_delays_all_error_types as a 3 x (3*len(reseeds)) grid,
@@ -429,8 +431,8 @@ def plot_sweep_results_all_error_types(
                         row_ymaxs[metric_idx] = max(row_ymaxs[metric_idx], np.nanmax(valid_y))
                 if metric == "MASE":
                     ax.axhline(1, color="black", linestyle="--", linewidth=0.7)
-                if metric in {"MASE", "MSE"}:
-                    ax.set_yscale("log")
+                if metric in {"MASE", "MSE"} and mase_scale in {'symlog','log','linear'}:
+                    ax.set_yscale(mase_scale)
                 if aic_scale in {'symlog','log','linear'} and metric == "AIC":
                     ax.set_yscale(aic_scale)
                 if xscale == 'log':
@@ -460,14 +462,15 @@ def plot_sweep_results_all_error_types(
                 ax.set_yticklabels([])
                 ax.yaxis.set_major_locator(plt.NullLocator())
                 ax.yaxis.set_minor_locator(plt.NullLocator())
-            for reseed_idx in range(n_reseeds):
-                ax = axes[metric_idx][reseed_idx]
-                # Only set exactly two yticks (min and max), and always set their labels
-                ax.set_ylim([ymin, ymax])
-                ax.set_yticks([ymin, ymax])
-                # Set tick labels to formatted numbers (scientific if needed)
-                ticklabels = [f"{ymin:.2g}", f"{ymax:.2g}"]
-                ax.set_yticklabels(ticklabels)
+            if pretty_yticks:
+                for reseed_idx in range(n_reseeds):
+                    ax = axes[metric_idx][reseed_idx]
+                    # Only set exactly two yticks (min and max), and always set their labels
+                    ax.set_ylim([ymin, ymax])
+                    ax.set_yticks([ymin, ymax])
+                    # Set tick labels to formatted numbers (scientific if needed)
+                    ticklabels = [f"{ymin:.2g}", f"{ymax:.2g}"]
+                    ax.set_yticklabels(ticklabels)
 
         plt.suptitle(f"{name + '_' if name else ''}{space} tuning", fontsize=14,y=1.05)
         plt.tight_layout() #rect=[0, 0, 1, 0.97])
