@@ -104,6 +104,24 @@ def mse(x, y):
 
     return ((x - y) ** 2).mean().item()
 
+def nmse(x,y):
+    """
+    Compute the mean squared error, normalized by the variance of the ground truth.
+
+    x : np.ndarray or torch.tensor
+        The ground truth time series.
+    y : np.ndarray or torch.tensor
+        The predicted time series.
+
+    Returns
+    -------
+    nmse_val : float
+        The normalized mean squared error between the provided arrays.
+    """
+    x = torch_convert(x)
+    y = torch_convert(y)
+    return ((x - y) ** 2).mean().item() / ((x - x.mean()) ** 2).mean().item()
+
 
 def r2(true_vals, pred_vals):
     """
@@ -253,6 +271,7 @@ def compute_all_stats(true_vals, pred_vals, rank, norm=True):
     return {
         "MAE": mae(true_vals, pred_vals),
         "MASE": mase(true_vals, pred_vals),
+        "NMSE": nmse(true_vals, pred_vals),
         "MSE": mse(true_vals, pred_vals),
         "R2": r2(true_vals, pred_vals),
         "Correl": correl(true_vals, pred_vals),
@@ -520,27 +539,3 @@ def measure_transient_growth(A):
     # num_abscissa = np.max(np.real(np.linalg.eigvals((A + np.conj(A).T) / 2)))
     # return num_abscissa, l2norm
     return l2norm
-
-# def get_period(data,dt=None,units='samples'):
-    
-#     if data.ndim == 3:
-#         return np.mean([get_period(i,dt) for i in data])
-#     if dt is None:
-#         fs = data.shape[0]
-#         dt = 1/fs
-#     else:
-#         fs = 1/dt
-#     chosen_freqs = []
-
-#     for comp in data.T:
-#         #channel-wise frequency computation
-#         freqs, amps = find_significant_frequencies(comp, surrogate_method='rs', fs=fs, return_amplitudes=True)
-#         chosen_freqs.append(freqs[np.argmax(np.abs(amps))])
-
-#     period = 1/np.mean(chosen_freqs)
-#     if units == 'time':
-#         return period
-#     elif units == 'samples':
-#         return period // dt
-#     else:
-#         raise ValueError(f"Invalid units: {units}")
