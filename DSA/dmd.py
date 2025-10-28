@@ -2,6 +2,7 @@
 
 import numpy as np
 import torch
+
 try:
     from .base_dmd import BaseDMD
 except ImportError:
@@ -142,8 +143,10 @@ class DMD(BaseDMD):
             The number of time steps ahead to predict. Defaults to 1.
         """
 
-        super().__init__(device=device, verbose=verbose, send_to_cpu=send_to_cpu, lamb=lamb)
-        
+        super().__init__(
+            device=device, verbose=verbose, send_to_cpu=send_to_cpu, lamb=lamb
+        )
+
         self.data = self._init_single_data(data)
 
         self.n_delays = n_delays
@@ -364,10 +367,10 @@ class DMD(BaseDMD):
         else:
             S = self.S
             cumulative_explained = self.cumulative_explained_variance
-        
+
         # Get maximum possible rank
         h_shape_last = self.H_shapes[-1][-1] if self.is_list_data else self.H.shape[-1]
-        
+
         # Use base class method to compute rank
         self.rank = self._compute_rank_from_params(
             S=S,
@@ -375,7 +378,7 @@ class DMD(BaseDMD):
             max_rank=h_shape_last,
             rank=self.rank,
             rank_thresh=self.rank_thresh,
-            rank_explained_variance=self.rank_explained_variance
+            rank_explained_variance=self.rank_explained_variance,
         )
 
     def compute_havok_dmd(self, lamb=None):
@@ -393,7 +396,7 @@ class DMD(BaseDMD):
             print("Computing least squares fits to HAVOK DMD ...")
 
         self.lamb = self.lamb if lamb is None else lamb
-        
+
         A_v = (
             torch.linalg.inv(
                 self.Vt_minus[:, : self.rank].T @ self.Vt_minus[:, : self.rank]
@@ -552,7 +555,7 @@ class DMD(BaseDMD):
 
         if self.send_to_cpu:
             self.all_to_device("cpu")  # send back to the cpu to save memory
-            
+
         # print('After DMD fitting in dmd.py', self.A_v.shape)
 
     def predict(self, test_data=None, reseed=None, full_return=False):
@@ -621,7 +624,6 @@ class DMD(BaseDMD):
             return pred_data, H_test_havok_dmd, H_test
         else:
             return pred_data
-
 
     def project_onto_modes(self):
         eigvals, eigvecs = torch.linalg.eigh(self.A_v)

@@ -6,6 +6,7 @@ import numpy as np
 import torch.nn.utils.parametrize as parametrize
 from scipy.stats import wasserstein_distance
 import ot  # optimal transport for multidimensional l2 wasserstein
+
 try:
     from .dmd import DMD
 except ImportError:
@@ -26,10 +27,11 @@ def pad_zeros(A, B, device):
 
     return A, B
 
+
 def compute_angle(evec):
-    '''
+    """
     computes the angle between multiple complex eigenvectors
-    '''
+    """
     if isinstance(evec, np.ndarray):
         evec = torch.from_numpy(evec).float()
     # evec /= torch.linalg.norm(evec, dim=1, keepdim=True)
@@ -37,6 +39,8 @@ def compute_angle(evec):
     ang = torch.arccos(ang)
     ang[torch.isnan(ang)] = 0
     return ang
+
+
 class LearnableSimilarityTransform(nn.Module):
     """
     Computes the similarity transform for a learnable orthonormal matrix C
@@ -179,8 +183,7 @@ class SimilarityTransformDist:
         iters=None,
         lr=None,
         score_method=None,
-        wasserstein_weightings = None,
-    
+        wasserstein_weightings=None,
     ):
         """
         Computes the optimal matrix C over specified group
@@ -200,11 +203,11 @@ class SimilarityTransformDist:
         _______
         None
         """
-        if isinstance(A,DMD):
+        if isinstance(A, DMD):
             A = A.A_v
-        if isinstance(B,DMD):
+        if isinstance(B, DMD):
             B = B.A_v
-        
+
         assert A.shape[0] == A.shape[1]
         assert B.shape[0] == B.shape[1]
 
@@ -213,11 +216,15 @@ class SimilarityTransformDist:
         self.A, self.B = A, B
         lr = self.lr if lr is None else lr
         iters = self.iters if iters is None else iters
-        wasserstein_compare = self.wasserstein_compare if wasserstein_compare is None else wasserstein_compare
+        wasserstein_compare = (
+            self.wasserstein_compare
+            if wasserstein_compare is None
+            else wasserstein_compare
+        )
         score_method = self.score_method if score_method is None else score_method
 
-        if score_method == 'wasserstein':
-            a,b = self._get_wasserstein_vars(A, B)
+        if score_method == "wasserstein":
+            a, b = self._get_wasserstein_vars(A, B)
             device = a.device
             # a = a  # .cpu()
             # b = b  # .cpu()
@@ -237,11 +244,15 @@ class SimilarityTransformDist:
             a, b = a.to(device), b.to(device)
 
             self.C_star = ot.emd(a, b, self.M)
-            self.score_star = ot.emd2(a, b, self.M) *a.shape[0] #add scaling factor due to random matrix theory
+            self.score_star = (
+                ot.emd2(a, b, self.M) * a.shape[0]
+            )  # add scaling factor due to random matrix theory
             # self.score_star = np.sum(self.C_star * self.M)
-            self.C_star = self.C_star / torch.linalg.norm(self.C_star, dim=1, keepdim=True)
+            self.C_star = self.C_star / torch.linalg.norm(
+                self.C_star, dim=1, keepdim=True
+            )
             # wasserstein_distance(A.cpu().numpy(),B.cpu().numpy())
-        
+
         else:
             self.losses, self.C_star, self.sim_net = self.optimize_C(
                 A, B, lr, iters, orthog=True, verbose=self.verbose
@@ -258,14 +269,14 @@ class SimilarityTransformDist:
                 self.C_star = C_star @ P
                 self.sim_net = sim_net
 
-    def _get_wasserstein_vars(self,A, B):
+    def _get_wasserstein_vars(self, A, B):
         # assert self.wasserstein_compare in {"sv", "eig","evec_angle", 'evec'}
         assert self.wasserstein_compare in {"eig"}
 
-        #deprecated: only do wasserstein comparison on eigenvalues (for now, until others are theoretically validated)
+        # deprecated: only do wasserstein comparison on eigenvalues (for now, until others are theoretically validated)
         # if self.wasserstein_compare == "sv":
-            # a = torch.svd(A).S.view(-1, 1)
-            # b = torch.svd(B).S.view(-1, 1)
+        # a = torch.svd(A).S.view(-1, 1)
+        # b = torch.svd(B).S.view(-1, 1)
         # if self.wasserstein_compare == "eig":
         a = torch.linalg.eig(A).eigenvalues
         a = torch.vstack([a.real, a.imag]).T
@@ -276,24 +287,28 @@ class SimilarityTransformDist:
         #     #this will compute the interior angles between eigenvectors
         #     aevec = torch.linalg.eig(A).eigenvectors
         #     bevec = torch.linalg.eig(B).eigenvectors
-        
+
         #     a = compute_angle(aevec)
         #     b = compute_angle(bevec)
         # else:
-            # raise AssertionError("wasserstein_compare must be 'sv', 'eig', 'evec_angle', or 'evec'")
-        
-        #if the number of elements in the sets are different, then we need to pad the smaller set with zeros
+        # raise AssertionError("wasserstein_compare must be 'sv', 'eig', 'evec_angle', or 'evec'")
+
+        # if the number of elements in the sets are different, then we need to pad the smaller set with zeros
         if a.shape[0] != b.shape[0]:
             # if self.wasserstein_compare in {'evec_angle', 'evec'}:
-                # raise AssertionError("Wasserstein comparison of eigenvectors is not supported when \
-                                    #  the number of elements in the sets are different")
+            # raise AssertionError("Wasserstein comparison of eigenvectors is not supported when \
+            #  the number of elements in the sets are different")
             if self.verbose:
                 print(f"Padding the smaller set with zeros")
             if a.shape[0] < b.shape[0]:
-                a = torch.cat([a, torch.zeros(b.shape[0] - a.shape[0], a.shape[1])], dim=0)
+                a = torch.cat(
+                    [a, torch.zeros(b.shape[0] - a.shape[0], a.shape[1])], dim=0
+                )
             else:
-                b = torch.cat([b, torch.zeros(a.shape[0] - b.shape[0], b.shape[1])], dim=0)
-        return a,b
+                b = torch.cat(
+                    [b, torch.zeros(a.shape[0] - b.shape[0], b.shape[1])], dim=0
+                )
+        return a, b
 
     def optimize_C(self, A, B, lr, iters, orthog, verbose):
         # parameterize mapping to be orthogonal
@@ -327,10 +342,10 @@ class SimilarityTransformDist:
             # if _ % 99:
             #     scheduler.step()
             losses.append(loss.item())
-            #TODO: add a flag for this
+            # TODO: add a flag for this
             # if _ > 2 and abs(losses[-1] - losses[-2]) < self.eps: #early stopping
-                # break
-          
+            # break
+
         if verbose:
             print("Finished optimizing C")
 
@@ -360,8 +375,8 @@ class SimilarityTransformDist:
         B = self.B if B is None else B
         assert A is not None
         assert B is not None
-        assert A.shape == self.C_star.shape or score_method == 'wasserstein'
-        assert B.shape == self.C_star.shape or score_method == 'wasserstein'
+        assert A.shape == self.C_star.shape or score_method == "wasserstein"
+        assert B.shape == self.C_star.shape or score_method == "wasserstein"
         score_method = self.score_method if score_method is None else score_method
         with torch.no_grad():
             if not isinstance(A, torch.Tensor):
@@ -379,21 +394,21 @@ class SimilarityTransformDist:
                     score = np.pi
                 else:
                     score = 0
-        elif score_method == 'euclidean':
+        elif score_method == "euclidean":
             score = (
                 torch.norm(A - C @ B @ C.T, p="fro").cpu().numpy().item()
             )  # / A.numpy().size
-        elif score_method == 'wasserstein':
-            #use the current C_star to compute the score
-            assert hasattr(self, 'score_star')
+        elif score_method == "wasserstein":
+            # use the current C_star to compute the score
+            assert hasattr(self, "score_star")
             # if wasserstein_compare == self.wasserstein_compare:
             score = self.score_star.item()
-            #non-eig wasserstein comparisons are deprecated until theoretically validated
+            # non-eig wasserstein comparisons are deprecated until theoretically validated
             # else:
             #     #apply the current transport plan to the new data
             #     a,b = self._get_wasserstein_vars(A, B)
             #     # a_transported =  self.C_star @ A #shouldn't this be a?
-                
+
             #     M = ot.dist(a, b, metric='sqeuclidean')
             #     score = torch.sum(self.C_star * M).item()
             #     #TODO: validate this
@@ -403,7 +418,7 @@ class SimilarityTransformDist:
             #     # score = transported_score.item()
             #     if self.rescale_wasserstein:
             #         score = score * A.shape[0] #add scaling factor due to random matrix theory
-              
+
         return score
 
     def fit_score(
@@ -443,42 +458,49 @@ class SimilarityTransformDist:
         assert A.shape[0] == B.shape[1] or self.wasserstein_compare is not None
         if A.shape[0] != B.shape[0]:
             # if self.wasserstein_compare is None:
-                # raise AssertionError(
-                    # "Matrices must be the same size unless using wasserstein distance"
-                # )
-            if score_method != 'wasserstein':  # otherwise resort to L2 Wasserstein over singular or eigenvalues
+            # raise AssertionError(
+            # "Matrices must be the same size unless using wasserstein distance"
+            # )
+            if (
+                score_method != "wasserstein"
+            ):  # otherwise resort to L2 Wasserstein over singular or eigenvalues
                 print(
                     f"resorting to wasserstein distance over {self.wasserstein_compare}"
                 )
-                score_method = 'wasserstein'
+                score_method = "wasserstein"
             else:
                 pass
 
-
-        self.fit(A, B, iters, lr, wasserstein_weightings=wasserstein_weightings, score_method=score_method)
-
-        return self.score(
-            self.A, self.B, score_method=score_method
+        self.fit(
+            A,
+            B,
+            iters,
+            lr,
+            wasserstein_weightings=wasserstein_weightings,
+            score_method=score_method,
         )
-        
+
+        return self.score(self.A, self.B, score_method=score_method)
+
+
 def compute_subspace_angles(A, B):
     """
     Computes the subspace angles between two DMD matrices.
     Matrices must be square and the same size.
-    
+
     Parameters
     ----------
     A : DMD object or numpy array
         First DMD matrix
     B : DMD object or numpy array
         Second DMD matrix
-        
+
     Returns
     -------
     angles : np.ndarray
         Principal angles between the subspaces
     """
-   
+
     A_mat = val_matrix(A)
     B_mat = val_matrix(B)
 
@@ -497,6 +519,7 @@ def compute_subspace_angles(A, B):
 
     return angles
 
+
 def val_matrix(matrix):
     if isinstance(matrix, DMD):
         mat = matrix.A_havok_dmd
@@ -510,5 +533,5 @@ def val_matrix(matrix):
     # Check matrix is square
     if mat.shape[0] != mat.shape[1]:
         raise ValueError(f"matrix must be square")
-        
+
     return mat

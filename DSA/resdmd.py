@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import cm
 from matplotlib import colors as mcolors
+
 try:
     from .dmd import DMD
 except ImportError:
@@ -10,14 +11,15 @@ import torch
 import ot
 from typing import Literal
 
+
 def compute_residuals(
     dmd: "DMD | np.ndarray | torch.Tensor",
     X: np.ndarray = None,
     Y: np.ndarray = None,
     rank: int = None,
     matrix: Literal["A_v", "A_havok_dmd"] = "A_v",
-    return_num_denom = False,
-    tol=1e-6
+    return_num_denom=False,
+    tol=1e-6,
 ):
     """
     Compute DMD eigenvalues, eigenvectors, and residuals for each mode.
@@ -51,12 +53,24 @@ def compute_residuals(
 
     # Handle DMD object, numpy array, or torch tensor
     if hasattr(dmd, matrix):
-        A = getattr(dmd, matrix).cpu().detach().numpy() if hasattr(getattr(dmd, matrix), "cpu") else getattr(dmd, matrix)
+        A = (
+            getattr(dmd, matrix).cpu().detach().numpy()
+            if hasattr(getattr(dmd, matrix), "cpu")
+            else getattr(dmd, matrix)
+        )
         L, G = np.linalg.eig(A)
         if matrix == "A_havok_dmd":
-            X = dmd.Vt_minus.cpu().detach().numpy()[:, : dmd.rank] @ dmd.S_mat[:dmd.rank,:dmd.rank].cpu().detach().numpy() @ dmd.U.cpu().detach().numpy().T[:dmd.rank]
-            Y = dmd.Vt_plus.cpu().detach().numpy()[:, : dmd.rank] @ dmd.S_mat[:dmd.rank,:dmd.rank].cpu().detach().numpy() @ dmd.U.cpu().detach().numpy().T[:dmd.rank]
-            
+            X = (
+                dmd.Vt_minus.cpu().detach().numpy()[:, : dmd.rank]
+                @ dmd.S_mat[: dmd.rank, : dmd.rank].cpu().detach().numpy()
+                @ dmd.U.cpu().detach().numpy().T[: dmd.rank]
+            )
+            Y = (
+                dmd.Vt_plus.cpu().detach().numpy()[:, : dmd.rank]
+                @ dmd.S_mat[: dmd.rank, : dmd.rank].cpu().detach().numpy()
+                @ dmd.U.cpu().detach().numpy().T[: dmd.rank]
+            )
+
         elif matrix == "A_v":
             X = (
                 dmd.Vt_minus.cpu().detach().numpy()[:, : dmd.rank]
@@ -73,12 +87,16 @@ def compute_residuals(
         A = dmd
         L, G = np.linalg.eig(A)
         if X is None or Y is None or rank is None:
-            raise ValueError("If passing a raw matrix, must also provide X, Y, and rank.")
+            raise ValueError(
+                "If passing a raw matrix, must also provide X, Y, and rank."
+            )
     elif hasattr(dmd, "numpy"):
         A = dmd.numpy()
         L, G = np.linalg.eig(A)
         if X is None or Y is None or rank is None:
-            raise ValueError("If passing a raw matrix, must also provide X, Y, and rank.")
+            raise ValueError(
+                "If passing a raw matrix, must also provide X, Y, and rank."
+            )
     else:
         raise ValueError("dmd must be a DMD object or a numpy array/torch tensor")
 

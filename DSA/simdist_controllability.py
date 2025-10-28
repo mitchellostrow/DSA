@@ -5,20 +5,22 @@ from scipy.linalg import orthogonal_procrustes
 try:
     from .simdist import SimilarityTransformDist
 except ImportError:
-    from simdist import SimilarityTransformDist 
+    from simdist import SimilarityTransformDist
+
 
 class ControllabilitySimilarityTransformDist:
     """
     Procrustes analysis over vector fields / LTI systems.
     Only Euclidean scoring is implemented in this closed-form version.
     """
+
     def __init__(
         self,
         *,
         score_method: Literal["euclidean", "angular"] = "euclidean",
-        compare: Literal['joint','control','state'] = 'joint',
+        compare: Literal["joint", "control", "state"] = "joint",
         joint_optim: bool = False,
-        return_distance_components: bool =True
+        return_distance_components: bool = True,
     ):
         f"""
         Parameters
@@ -35,61 +37,68 @@ class ControllabilitySimilarityTransformDist:
         self.score_method = score_method
         self.compare = compare
         self.joint_optim = joint_optim
-        self.return_distance_components=return_distance_components
+        self.return_distance_components = return_distance_components
 
     @staticmethod
     def compute_angular_dist(A, B):
         """
         Computes the angular distance between two matrices A and B.
-        
+
         Args:
             A (np.ndarray): First matrix
             B (np.ndarray): Second matrix
-            
+
         Returns:
             float: Angular distance between A and B
         """
-        cos_sim = np.trace(A.T @ B) / (np.linalg.norm(A, 'fro') * np.linalg.norm(B, 'fro'))
+        cos_sim = np.trace(A.T @ B) / (
+            np.linalg.norm(A, "fro") * np.linalg.norm(B, "fro")
+        )
         cos_sim = np.clip(cos_sim, -1, 1)
         cos_sim = np.arccos(cos_sim)
         cos_sim = np.clip(cos_sim, 0, np.pi)
         return cos_sim
 
     def fit_score(self, A, B, A_control, B_control):
-        
+
         C, C_u, sims_joint_euc, sims_joint_ang = self.compare_systems_procrustes(
             A1=A, B1=A_control, A2=B, B2=B_control, align_inputs=self.joint_optim
         )
 
         score_method = self.score_method
 
-        if self.compare == 'joint':
+        if self.compare == "joint":
             if self.return_distance_components:
-                if self.score_method == 'euclidean':
+                if self.score_method == "euclidean":
                     # sims_control_joint = np.linalg.norm(C @ A_control @ C_u - B_control, "fro") ** 2
                     # sims_state_joint = np.linalg.norm(C @ A @ C.T - B, "fro") ** 2
-                    sims_control_joint = np.linalg.norm(C @ A_control @ C_u - B_control, "fro") 
-                    sims_state_joint = np.linalg.norm(C @ A @ C.T - B, "fro") 
+                    sims_control_joint = np.linalg.norm(
+                        C @ A_control @ C_u - B_control, "fro"
+                    )
+                    sims_state_joint = np.linalg.norm(C @ A @ C.T - B, "fro")
                     return sims_joint_euc, sims_state_joint, sims_control_joint
-                elif self.score_method == 'angular':
-                    sims_control_joint = self.compute_angular_dist(C @ A_control @ C_u, B_control)
+                elif self.score_method == "angular":
+                    sims_control_joint = self.compute_angular_dist(
+                        C @ A_control @ C_u, B_control
+                    )
                     sims_state_joint = self.compute_angular_dist(C @ A @ C.T, B)
                     return sims_joint_ang, sims_state_joint, sims_control_joint
             else:
-                if self.score_method == 'euclidean':
+                if self.score_method == "euclidean":
                     return sims_joint_euc
-                elif self.score_method == 'angular':
+                elif self.score_method == "angular":
                     return sims_joint_ang
                 else:
-                    raise ValueError('Choose between Euclidean or angular distance')
+                    raise ValueError("Choose between Euclidean or angular distance")
 
-        elif self.compare == 'state':
+        elif self.compare == "state":
             # return self.compare_A(A, B, score_method=score_method)
-            raise ValueError('To compute state similarity alone, use the SimilarityTransformDist class')
+            raise ValueError(
+                "To compute state similarity alone, use the SimilarityTransformDist class"
+            )
 
         else:
             return self.compare_B(A_control, B_control, score_method=score_method)
-
 
     def get_controllability_matrix(self, A, B):
         """
@@ -106,26 +115,26 @@ class ControllabilitySimilarityTransformDist:
         K = B.copy()
         current1_term = B.copy()  # Start with A^0 * B = B
         current2_term = B.copy()  # Start with A^0 * B = B
-        
+
         for i in range(1, n):
             # current_term = np.linalg.matrix_power(A, i) @ B  # Use stable matrix power function
             current1_term = A @ current1_term
             current2_term = A.T @ current2_term
-            
+
             # Check for numerical instability
             # term_norm = np.linalg.norm(current_term)
             # if term_norm < 1e-12 or term_norm > 1e12:
-                # break
-                
+            # break
+
             # Check for linear dependence (rank deficiency)
             K_test = np.hstack((K, current1_term, current2_term))
             # if np.linalg.matrix_rank(K_test) <= np.linalg.matrix_rank(K):
-                # break
-                
+            # break
+
             K = K_test
         return K
 
-    def compare_systems_procrustes(self, A1, B1, A2, B2, *,align_inputs=False):
+    def compare_systems_procrustes(self, A1, B1, A2, B2, *, align_inputs=False):
         """
         Compares two LTI systems by finding the optimal orthogonal transformation
         that aligns their controllability matrices.
@@ -157,8 +166,9 @@ class ControllabilitySimilarityTransformDist:
             C = U @ Vh
             K2_aligned = C @ K2
             err = np.linalg.norm(K1 - K2_aligned, "fro")
-            cos_sim = (np.vdot(K1, K2_aligned).real /
-                       (np.linalg.norm(K1, "fro") * np.linalg.norm(K2, "fro")))
+            cos_sim = np.vdot(K1, K2_aligned).real / (
+                np.linalg.norm(K1, "fro") * np.linalg.norm(K2, "fro")
+            )
             cos_sim = np.clip(cos_sim, -1, 1)
             cos_sim = np.arccos(cos_sim)
             cos_sim = np.clip(cos_sim, 0, np.pi)
@@ -168,36 +178,38 @@ class ControllabilitySimilarityTransformDist:
         U1, S1, V1t = np.linalg.svd(K1, full_matrices=False)
         U2, S2, V2t = np.linalg.svd(K2, full_matrices=False)
 
-        C   = U1 @ U2.T
+        C = U1 @ U2.T
         C_u = V2t.T @ V1t  # = V2 @ V1^T
-        
+
         K2_aligned = C @ K2 @ C_u
         err = np.linalg.norm(K1 - K2_aligned, "fro")
-        cos_sim = (np.vdot(K1, K2_aligned).real /
-                   (np.linalg.norm(K1, "fro") * np.linalg.norm(K2, "fro")))
+        cos_sim = np.vdot(K1, K2_aligned).real / (
+            np.linalg.norm(K1, "fro") * np.linalg.norm(K2, "fro")
+        )
         cos_sim = np.clip(cos_sim, -1, 1)
         cos_sim = np.arccos(cos_sim)
         cos_sim = np.clip(cos_sim, 0, np.pi)
-        
+
         return C, C_u, err, cos_sim
 
     # @staticmethod
     # def compare_A(A1, A2, score_method='euclidean'):
-        # simdist = SimilarityTransformDist(iters=1000, score_method=score_method, lr=1e-3, verbose=True)
-        # return simdist.fit_score(A1, A2, score_method=score_method)
+    # simdist = SimilarityTransformDist(iters=1000, score_method=score_method, lr=1e-3, verbose=True)
+    # return simdist.fit_score(A1, A2, score_method=score_method)
 
     @staticmethod
-    def compare_B(B1, B2, score_method='euclidean'):
-        '''
+    def compare_B(B1, B2, score_method="euclidean"):
+        """
         compares the B matrices with left procrustes
-        '''
-        if score_method == 'euclidean':
+        """
+        if score_method == "euclidean":
             R, _ = orthogonal_procrustes(B2.T, B1.T)
-            return np.linalg.norm(B1 - R.T @ B2, "fro") 
+            return np.linalg.norm(B1 - R.T @ B2, "fro")
             # return np.linalg.norm(B1 - R.T @ B2, "fro") ** 2
-        elif score_method == 'angular':
+        elif score_method == "angular":
             R, _ = orthogonal_procrustes(B2.T, B1.T)
-            return ControllabilitySimilarityTransformDist.compute_angular_dist(B1, R.T @ B2)
+            return ControllabilitySimilarityTransformDist.compute_angular_dist(
+                B1, R.T @ B2
+            )
         else:
-            raise ValueError('Choose between Euclidean or angular distance')
-
+            raise ValueError("Choose between Euclidean or angular distance")

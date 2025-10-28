@@ -4,6 +4,7 @@ from .dmd import DMD
 from .simdist import SimilarityTransformDist
 from .dsa import DSA
 import warnings
+
 # from dysts.utils import find_significant_frequencies
 
 
@@ -104,7 +105,8 @@ def mse(x, y):
 
     return ((x - y) ** 2).mean().item()
 
-def nmse(x,y):
+
+def nmse(x, y):
     """
     Compute the mean squared error, normalized by the variance of the ground truth.
 
@@ -518,7 +520,7 @@ def measure_nonnormality_transpose(A):
 
 def measure_transient_growth(A):
     """
-    Computes the l2 norm of the matrix (discrete time growth rate). 
+    Computes the l2 norm of the matrix (discrete time growth rate).
     This is the maximum singular value, which is a measure of the instantaneous growth rate.
     This can be > 1 even if the matrix is stable.
 

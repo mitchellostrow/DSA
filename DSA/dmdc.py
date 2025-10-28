@@ -1,6 +1,8 @@
 """This module computes the DMD with control (DMDc) model for a given dataset."""
+
 import numpy as np
 import torch
+
 try:
     from .dmd import embed_signal_torch
     from .base_dmd import BaseDMD
@@ -8,41 +10,45 @@ except ImportError:
     from dmd import embed_signal_torch
     from base_dmd import BaseDMD
 
-def embed_data_DMDc(data, n_delays=1, n_control_delays=1, delay_interval=1, control=False):
+
+def embed_data_DMDc(
+    data, n_delays=1, n_control_delays=1, delay_interval=1, control=False
+):
     if control:
         if n_control_delays == 1:
             if data.ndim == 2:
-                return data[(n_delays-1)*delay_interval:, :]
+                return data[(n_delays - 1) * delay_interval :, :]
             else:
-                return data[:, (n_delays-1)*delay_interval:, :]
+                return data[:, (n_delays - 1) * delay_interval :, :]
         else:
             embedded_data = embed_signal_torch(data, n_control_delays, delay_interval)
             return embedded_data
     else:
         return embed_signal_torch(data, n_delays, delay_interval)
 
+
 class DMDc(BaseDMD):
-    """DMDc class for computing and predicting with DMD with control models.
-    """
+    """DMDc class for computing and predicting with DMD with control models."""
+
     def __init__(
-            self,
-            data,
-            control_data=None,
-            n_delays=1,
-            n_control_delays=1,
-            delay_interval=1,
-            rank_input=None,
-            rank_thresh_input=None,
-            rank_explained_variance_input=None,
-            rank_output=None,
-            rank_thresh_output=None,
-            rank_explained_variance_output=None,
-            lamb=1e-8,
-            device='cpu',
-            verbose=False,
-            send_to_cpu=False,
-            svd_separate = True,
-            steps_ahead=1
+        self,
+        data,
+        control_data=None,
+        n_delays=1,
+        n_control_delays=1,
+        delay_interval=1,
+        rank_input=None,
+        rank_thresh_input=None,
+        rank_explained_variance_input=None,
+        rank_output=None,
+        rank_thresh_output=None,
+        rank_explained_variance_output=None,
+        lamb=1e-8,
+        device="cpu",
+        verbose=False,
+        send_to_cpu=False,
+        svd_separate=True,
+        steps_ahead=1,
     ):
         """
         Parameters
@@ -68,7 +74,7 @@ class DMDc(BaseDMD):
             to 1 time step.
 
         rank : int
-            The rank of V in fitting DMDc - i.e., the number of columns of V to 
+            The rank of V in fitting DMDc - i.e., the number of columns of V to
             use to fit the DMDc model. Defaults to None, in which case all columns of V
             will be used.
 
@@ -80,7 +86,7 @@ class DMDc(BaseDMD):
         rank_explained_variance : float
             Parameter that controls the rank of V in fitting DMDc by indicating the percentage of
             cumulative explained variance that should be explained by the columns of V. Defaults to None.
-        
+
         lamb : float
             Regularization parameter for ridge regression. Defaults to 0.
 
@@ -93,28 +99,32 @@ class DMDc(BaseDMD):
         send_to_cpu: bool
             If True, will send all tensors in the object back to the cpu after everything is computed.
             This is implemented to prevent gpu memory overload when computing multiple DMDs.
-            
+
         steps_ahead: int
             The number of time steps ahead to predict. Defaults to 1.
         """
 
-        super().__init__(device=device, verbose=verbose, send_to_cpu=send_to_cpu, lamb=lamb)
-        
+        super().__init__(
+            device=device, verbose=verbose, send_to_cpu=send_to_cpu, lamb=lamb
+        )
+
         self._init_data(data, control_data)
 
         self.n_delays = n_delays
         self.n_control_delays = n_control_delays
         self.delay_interval = delay_interval
-        
+
         self.rank_input = rank_input
         self.rank_thresh_input = rank_thresh_input
         self.rank_explained_variance_input = rank_explained_variance_input
         self.rank_output = rank_output
         self.rank_thresh_output = rank_thresh_output
         self.rank_explained_variance_output = rank_explained_variance_output
-        self.svd_separate = svd_separate #do svd on H and u separately as well as regression
+        self.svd_separate = (
+            svd_separate  # do svd on H and u separately as well as regression
+        )
         self.steps_ahead = steps_ahead
-        
+
         # Hankel matrix
         self.H = None
 
@@ -127,12 +137,12 @@ class DMDc(BaseDMD):
         self.V = None
         self.S_mat = None
         self.S_mat_inv = None
-        
+
         # Change of basis between the reduced-order subspace and the full space
         self.U_out = None
         self.S_out = None
         self.V_out = None
-        
+
         # DMDc attributes
         self.A_tilde = None
         self.B_tilde = None
@@ -140,47 +150,52 @@ class DMDc(BaseDMD):
         self.B = None
         self.A_havok_dmd = None
         self.B_havok_dmd = None
-        
+
         # Check if the state and control data are list (for different trial lengths)
         if not np.all([isinstance(data, list), isinstance(control_data, list)]):
             if isinstance(data, list) or isinstance(control_data, list):
-                raise TypeError("If you pass one of (data, control_data) as list, the other must also be a list.")
+                raise TypeError(
+                    "If you pass one of (data, control_data) as list, the other must also be a list."
+                )
 
     def _init_data(self, data, control_data=None):
         # Process main data
         self.data, data_is_ragged = self._process_single_dataset(data)
-        
+
         # Process control data
         if control_data is not None:
-            self.control_data, control_is_ragged = self._process_single_dataset(control_data)
+            self.control_data, control_is_ragged = self._process_single_dataset(
+                control_data
+            )
         else:
             self.control_data = torch.zeros_like(self.data)
             control_is_ragged = False
-        
+
         # Check consistency between data and control_data
         if data_is_ragged != control_is_ragged:
-            raise ValueError("Data and control data have different structure (type or dimensionality).")
-        
+            raise ValueError(
+                "Data and control data have different structure (type or dimensionality)."
+            )
+
         if data_is_ragged:
             # Additional validation for ragged data
             if not all(d.shape[-1] == control_data[0].shape[-1] for d in control_data):
                 raise ValueError(
                     "All control tensors in the list must have the same number of features (last dimension)."
                 )
-            if not all(d.shape[0] == control_d.shape[0] for d, control_d in zip(data, control_data)):
+            if not all(
+                d.shape[0] == control_d.shape[0]
+                for d, control_d in zip(data, control_data)
+            ):
                 raise ValueError(
                     "Data and control_data tensors must have the same number of time steps."
                 )
-            
+
             # Set attributes for ragged data
             n_features = self.data[0].shape[-1]
             self.n = n_features
-            self.ntrials = sum(
-                d.shape[0] if d.ndim == 3 else 1 for d in self.data
-            )
-            self.trial_counts = [
-                d.shape[0] if d.ndim == 3 else 1 for d in self.data
-            ]
+            self.ntrials = sum(d.shape[0] if d.ndim == 3 else 1 for d in self.data)
+            self.trial_counts = [d.shape[0] if d.ndim == 3 else 1 for d in self.data]
             self.is_list_data = True
         else:
             # Set attributes for non-ragged data
@@ -193,12 +208,12 @@ class DMDc(BaseDMD):
             self.is_list_data = False
 
     def compute_hankel(
-            self,
-            data=None,
-            control_data=None,
-            n_delays=None,
-            delay_interval=None,
-        ):
+        self,
+        data=None,
+        control_data=None,
+        n_delays=None,
+        delay_interval=None,
+    ):
         """
         Computes the Hankel matrix from the provided data and forms Omega.
         """
@@ -208,25 +223,54 @@ class DMDc(BaseDMD):
         # Overwrite parameters if provided
         self.data = self.data if data is None else self._init_data(data, control_data)
         self.n_delays = self.n_delays if n_delays is None else n_delays
-        self.delay_interval = self.delay_interval if delay_interval is None else delay_interval
-        
+        self.delay_interval = (
+            self.delay_interval if delay_interval is None else delay_interval
+        )
+
         if self.is_list_data:
             self.data = [d.to(self.device) for d in self.data]
             self.control_data = [d.to(self.device) for d in self.control_data]
             # Compute Hankel matrices for each trial separately
-            self.H = [embed_data_DMDc(d, n_delays=self.n_delays, n_control_delays=self.n_control_delays, delay_interval=self.delay_interval).float() for d in self.data]
-            self.Hu = [embed_data_DMDc(d, n_delays=self.n_delays, n_control_delays=self.n_control_delays, delay_interval=self.delay_interval, control=True).float() for d in self.control_data]
+            self.H = [
+                embed_data_DMDc(
+                    d,
+                    n_delays=self.n_delays,
+                    n_control_delays=self.n_control_delays,
+                    delay_interval=self.delay_interval,
+                ).float()
+                for d in self.data
+            ]
+            self.Hu = [
+                embed_data_DMDc(
+                    d,
+                    n_delays=self.n_delays,
+                    n_control_delays=self.n_control_delays,
+                    delay_interval=self.delay_interval,
+                    control=True,
+                ).float()
+                for d in self.control_data
+            ]
             self.H_shapes = [h.shape for h in self.H]
         else:
             self.data = self.data.to(self.device)
             self.control_data = self.control_data.to(self.device)
             # Compute Hankel matrices
-            self.H = embed_data_DMDc(self.data, n_delays=self.n_delays, n_control_delays=self.n_control_delays, delay_interval=self.delay_interval).float()
-            self.Hu = embed_data_DMDc(self.control_data, n_delays=self.n_delays, n_control_delays=self.n_control_delays, delay_interval=self.delay_interval, control=True).float()
+            self.H = embed_data_DMDc(
+                self.data,
+                n_delays=self.n_delays,
+                n_control_delays=self.n_control_delays,
+                delay_interval=self.delay_interval,
+            ).float()
+            self.Hu = embed_data_DMDc(
+                self.control_data,
+                n_delays=self.n_delays,
+                n_control_delays=self.n_control_delays,
+                delay_interval=self.delay_interval,
+                control=True,
+            ).float()
 
         if self.verbose:
             print("Hankel matrices computed!")
-
 
     def compute_svd(self):
         """
@@ -234,7 +278,6 @@ class DMDc(BaseDMD):
         """
         if self.verbose:
             print("Computing SVD on H and U matrices ...")
-
 
         if self.is_list_data:
             self.H_shapes = [h.shape for h in self.H]
@@ -249,7 +292,7 @@ class DMDc(BaseDMD):
                     )
                 else:
                     H_list.append(h_elem)
-                    
+
             for hu_elem in self.Hu:
                 if hu_elem.ndim == 3:
                     Hu_list.append(
@@ -265,7 +308,7 @@ class DMDc(BaseDMD):
             self.H_row_counts = [h.shape[0] for h in H_list]
             H = self.H
             Hu = self.Hu
-            
+
         elif self.H.ndim == 3:  # flatten across trials for 3d
             H = self.H.reshape(self.H.shape[0] * self.H.shape[1], self.H.shape[2])
             Hu = self.Hu.reshape(self.Hu.shape[0] * self.Hu.shape[1], self.Hu.shape[2])
@@ -284,15 +327,19 @@ class DMDc(BaseDMD):
         self.Su_mat = torch.diag(self.Su).to(self.device)
         self.Su_mat_inv = torch.diag(1 / self.Su).to(self.device)
 
-        self.cumulative_explained_variance_input = self._compute_explained_variance(self.Su)
-        self.cumulative_explained_variance_output = self._compute_explained_variance(self.Sh)
+        self.cumulative_explained_variance_input = self._compute_explained_variance(
+            self.Su
+        )
+        self.cumulative_explained_variance_output = self._compute_explained_variance(
+            self.Sh
+        )
 
         self.Vht_minus, self.Vht_plus = self.get_plus_minus(self.Vh, self.H)
         self.Vut_minus, _ = self.get_plus_minus(self.Vu, self.Hu)
 
         if self.verbose:
             print("SVDs computed!")
-    
+
     def get_plus_minus(self, V, H):
         if self.ntrials > 1:
             if self.is_list_data:
@@ -341,12 +388,18 @@ class DMDc(BaseDMD):
 
         return Vt_minus, Vt_plus
 
-
-    def recalc_rank(self, rank_input=None, rank_thresh_input=None, rank_explained_variance_input=None,
-                    rank_output=None, rank_thresh_output=None, rank_explained_variance_output=None):
-        '''
+    def recalc_rank(
+        self,
+        rank_input=None,
+        rank_thresh_input=None,
+        rank_explained_variance_input=None,
+        rank_output=None,
+        rank_thresh_output=None,
+        rank_explained_variance_output=None,
+    ):
+        """
         Recalculates the rank for input and output based on provided parameters.
-        '''
+        """
         # Recalculate ranks for input
         self.rank_input = self._compute_rank_from_params(
             S=self.Su,
@@ -354,7 +407,7 @@ class DMDc(BaseDMD):
             max_rank=self.Hu.shape[-1],
             rank=rank_input,
             rank_thresh=rank_thresh_input,
-            rank_explained_variance=rank_explained_variance_input
+            rank_explained_variance=rank_explained_variance_input,
         )
         # Recalculate ranks for output
         self.rank_output = self._compute_rank_from_params(
@@ -363,9 +416,8 @@ class DMDc(BaseDMD):
             max_rank=self.H.shape[-1],
             rank=rank_output,
             rank_thresh=rank_thresh_output,
-            rank_explained_variance=rank_explained_variance_output
+            rank_explained_variance=rank_explained_variance_output,
         )
-
 
     def compute_dmdc(self, lamb=None):
         if self.verbose:
@@ -373,7 +425,13 @@ class DMDc(BaseDMD):
 
         self.lamb = self.lamb if lamb is None else lamb
 
-        V_minus_tot = torch.cat([self.Vht_minus[:, :self.rank_output], self.Vut_minus[:, :self.rank_input]], dim=1)
+        V_minus_tot = torch.cat(
+            [
+                self.Vht_minus[:, : self.rank_output],
+                self.Vut_minus[:, : self.rank_input],
+            ],
+            dim=1,
+        )
 
         A_v_tot = (
             torch.linalg.inv(
@@ -381,11 +439,11 @@ class DMDc(BaseDMD):
                 + self.lamb * torch.eye(V_minus_tot.shape[1]).to(self.device)
             )
             @ V_minus_tot.T
-            @ self.Vht_plus[:, :self.rank_output]
+            @ self.Vht_plus[:, : self.rank_output]
         ).T
-        #split A_v_tot into A_v and B_v
-        self.A_v = A_v_tot[:, :self.rank_output]
-        self.B_v = A_v_tot[:, self.rank_output:]
+        # split A_v_tot into A_v and B_v
+        self.A_v = A_v_tot[:, : self.rank_output]
+        self.B_v = A_v_tot[:, self.rank_output :]
         self.A_havok_dmd = (
             self.Uh
             @ self.Sh_mat[: self.Uh.shape[1], : self.rank_output]
@@ -401,24 +459,24 @@ class DMDc(BaseDMD):
             @ self.Su_mat_inv[: self.rank_input, : self.Uu.shape[1]]
             @ self.Uu.T
         )
-        
+
         # Set the A and B properties for backward compatibility and easier access
         self.A = self.A_havok_dmd
         self.B = self.B_havok_dmd
-        
+
         if self.verbose:
             print("DMDc matrices computed!")
 
     def fit(
-            self,
-            data=None,
-            control_data=None,
-            n_delays=None,
-            delay_interval=None,
-            lamb=None,
-            device=None,
-            verbose=None,
-        ):
+        self,
+        data=None,
+        control_data=None,
+        n_delays=None,
+        delay_interval=None,
+        lamb=None,
+        device=None,
+        verbose=None,
+    ):
         """
         Fits the DMDc model to the provided data.
         """
@@ -429,20 +487,20 @@ class DMDc(BaseDMD):
         self.compute_hankel(data, control_data, n_delays, delay_interval)
         self.compute_svd()
         self.recalc_rank(
-            self.rank_input, self.rank_thresh_input, self.rank_explained_variance_input,
-            self.rank_output, self.rank_thresh_output, self.rank_explained_variance_output
+            self.rank_input,
+            self.rank_thresh_input,
+            self.rank_explained_variance_input,
+            self.rank_output,
+            self.rank_thresh_output,
+            self.rank_explained_variance_output,
         )
         self.compute_dmdc(lamb)
         if self.send_to_cpu:
-            self.all_to_device('cpu')  # send back to the cpu to save memory
+            self.all_to_device("cpu")  # send back to the cpu to save memory
 
     def predict(
-        self,
-        test_data=None,
-        control_data=None,
-        reseed=None,
-        full_return=False
-        ):
+        self, test_data=None, control_data=None, reseed=None, full_return=False
+    ):
         """
         Parameters
         ----------
@@ -474,10 +532,17 @@ class DMDc(BaseDMD):
             test_data = self.data
         if control_data is None:
             control_data = self.control_data
-            
+
         if isinstance(test_data, list):
-            predictions = [self.predict(test_data=d, control_data=d_control,
-                                        reseed=reseed, full_return=full_return) for d, d_control in zip(test_data, control_data)]
+            predictions = [
+                self.predict(
+                    test_data=d,
+                    control_data=d_control,
+                    reseed=reseed,
+                    full_return=full_return,
+                )
+                for d, d_control in zip(test_data, control_data)
+            ]
             if full_return:
                 pred_data = [pred[0] for pred in predictions]
                 H_test_dmdc = [pred[1] for pred in predictions]
@@ -485,20 +550,24 @@ class DMDc(BaseDMD):
                 return pred_data, H_test_dmdc, H_test
             else:
                 return predictions
-            
+
         if isinstance(test_data, np.ndarray):
             test_data = torch.from_numpy(test_data).to(self.device)
         if isinstance(control_data, np.ndarray):
             control_data = torch.from_numpy(control_data).to(self.device)
-            
+
         ndim = test_data.ndim
         if ndim == 2:
             test_data = test_data.unsqueeze(0)
             control_data = control_data.unsqueeze(0)
         # H_test = embed_data_DMDc(test_data, n_delays=self.n_delays, delay_interval=self.delay_interval, control=False)
         # H_control = embed_data_DMDc(control_data, n_delays=self.n_control_delays, delay_interval=self.delay_interval, control=True)
-        H_test = embed_signal_torch(test_data, self.n_delays, self.delay_interval).float()
-        H_control = embed_signal_torch(control_data, self.n_control_delays, self.delay_interval).float()
+        H_test = embed_signal_torch(
+            test_data, self.n_delays, self.delay_interval
+        ).float()
+        H_control = embed_signal_torch(
+            control_data, self.n_control_delays, self.delay_interval
+        ).float()
         if reseed is None:
             reseed = 1
 
@@ -506,22 +575,33 @@ class DMDc(BaseDMD):
         H_test_dmdc[:, 0] = H_test[:, 0]
         A = self.A_havok_dmd
         B = self.B_havok_dmd
-        
+
         for t in range(1, H_test.shape[1]):
-            u_t = H_control[:, t - 1]  
+            u_t = H_control[:, t - 1]
             # print(A.shape)
             # print(H_test[:, t - 1].shape)
             # print(B.shape)
             # print(u_t.shape)
             if t % reseed == 0:
-                H_test_dmdc[:, t] = (A @ H_test[:, t - 1].transpose(-2, -1)).transpose(-2, -1) + (B @ u_t.transpose(-2, -1)).transpose(-2, -1)    
+                H_test_dmdc[:, t] = (A @ H_test[:, t - 1].transpose(-2, -1)).transpose(
+                    -2, -1
+                ) + (B @ u_t.transpose(-2, -1)).transpose(-2, -1)
             else:
-                H_test_dmdc[:, t] = (A @ H_test_dmdc[:, t - 1].transpose(-2, -1)).transpose(-2, -1) + (B @ u_t.transpose(-2, -1)).transpose(-2, -1)
-        pred_data = torch.hstack([test_data[:, :(self.n_delays - 1)*self.delay_interval + self.steps_ahead], H_test_dmdc[:, self.steps_ahead:, :self.n]])
+                H_test_dmdc[:, t] = (
+                    A @ H_test_dmdc[:, t - 1].transpose(-2, -1)
+                ).transpose(-2, -1) + (B @ u_t.transpose(-2, -1)).transpose(-2, -1)
+        pred_data = torch.hstack(
+            [
+                test_data[
+                    :, : (self.n_delays - 1) * self.delay_interval + self.steps_ahead
+                ],
+                H_test_dmdc[:, self.steps_ahead :, : self.n],
+            ]
+        )
 
         if ndim == 2:
             pred_data = pred_data[0]
-        
+
         if full_return:
             return pred_data, H_test_dmdc, H_test
         else:
