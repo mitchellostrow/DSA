@@ -2,7 +2,7 @@
 import numpy as np
 import torch
 
-class SubspaceDMDc():
+class SubspaceDMDc:
     """Subspace DMDc class for computing and predicting with DMD with control models.
     """
     def __init__(
