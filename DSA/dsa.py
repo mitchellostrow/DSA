@@ -478,7 +478,7 @@ class DSA(GeneralizedDSA):
         device='cpu',
         dsa_verbose=False,
         n_jobs=1,
-        # Advanced simdist parameters
+        #simdist parameters
         score_method: Literal["angular", "euclidean"] = "angular",
         iters: int = 1500,
         lr: float = 5e-3,
@@ -486,7 +486,6 @@ class DSA(GeneralizedDSA):
         **dmd_kwargs
     ):
         #TODO: add readme
-        # Build simdist_config internally
         simdist_config = {
             'score_method': score_method,
             'iters': iters,
@@ -518,23 +517,39 @@ class InputDSA(GeneralizedDSA):
         Y=None,
         Y_control=None,
         dmd_class=SubspaceDMDc,
-        similarity_class=ControllabilitySimilarityTransformDist,
         dmd_config: Union[Mapping[str, Any], dataclass]= SubspaceDMDcConfig,
         simdist_config: Union[Mapping[str, Any], dataclass] = ControllabilitySimilarityTransformDistConfig,
         device='cpu',
         dsa_verbose=False,
         n_jobs=1,
     ):
+        #check if simdist_config has 'compare', and if it's 'state', use the standard SimilarityTransformDist,
+        #otherwise use ControllabilitySimilarityTransformDistConfig
+        if isinstance(simdist_config, dataclass): 
+            compare = simdist_config.compare
+        elif isinstance(simdist_config,dict):
+            compare = simdist_config.get("compare",None)
+        else:
+            raise ValueError("unknown data type for simdist-config, use dataclass or dict")
+        if compare == 'state':
+            simdist = SimilarityTransformDist
+        else:
+            simdist = ControllabilitySimilarityTransformDist
+
         super().__init__(
             X,
             Y,
             X_control,
             Y_control,
             dmd_class,
-            similarity_class,
+            simdist,
             dmd_config,
             simdist_config,
             device,
             dsa_verbose,
             n_jobs,
         )
+
+        assert X_control is not None
+        assert self.dmd_has_control
+

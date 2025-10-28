@@ -58,7 +58,6 @@ class ControllabilitySimilarityTransformDist:
         C, C_u, sims_joint_euc, sims_joint_ang = self.compare_systems_procrustes(
             A1=A, B1=A_control, A2=B, B2=B_control, align_inputs=self.joint_optim
         )
- 
 
         score_method = self.score_method
 
@@ -83,7 +82,8 @@ class ControllabilitySimilarityTransformDist:
                     raise ValueError('Choose between Euclidean or angular distance')
 
         elif self.compare == 'state':
-            return self.compare_A(A, B, score_method=score_method)
+            # return self.compare_A(A, B, score_method=score_method)
+            raise ValueError('To compute state similarity alone, use the SimilarityTransformDist class')
 
         else:
             return self.compare_B(A_control, B_control, score_method=score_method)
