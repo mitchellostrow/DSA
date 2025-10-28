@@ -1,4 +1,7 @@
 from DSA.dmd import DMD as DefaultDMD
+from DSA.simdist_controllability import ControllabilitySimilarityTransformDist
+from DSA.dmdc import DMDc as DefaultDMDc
+from DSA.subspace_dmdc import SubspaceDMDc
 from DSA.simdist import SimilarityTransformDist
 from typing import Literal
 import torch
@@ -6,6 +9,11 @@ import numpy as np
 from omegaconf.listconfig import ListConfig
 import tqdm
 from joblib import Parallel, delayed
+from dataclasses import dataclass, is_dataclass, asdict
+import DSA.pykoopman as pykoopman
+from DSA.pykoopman.regression import DMDc, EDMDc
+from typing import Union, Mapping, Any
+import warnings
 
 
 CAST_TYPES = {
@@ -20,26 +28,61 @@ CAST_TYPES = {
     "send_to_cpu": bool,
 }
 
+#___Example config dataclasses for DMD #
+@dataclass()
+class DefaultDMDConfig:
+    n_delays: int = 1
+    delay_interval: int = 1
+    rank: int = None
+    lamb: float = 0
+    send_to_cpu: bool = False
+@dataclass()
+class pyKoopmanDMDConfig:
+    observables: pykoopman.observables.BaseObservables = pykoopman.observables.TimeDelay(n_delays=1)
+    regressor = pykoopman.regression.DMD(svd_rank=2)
+    
+@dataclass()
+class SubspaceDMDcConfig:
+    n_delays: int = 1
+    delay_interval: int = 1
+    rank: int = None
+    lamb: float = 0
+    backend: str = 'n4sid'
 
-class DSA:
+#__Example config dataclasses for similarity transform distance #
+@dataclass
+class SimilarityTransformDistConfig:
+    iters: int = 1500
+    score_method: Literal["angular", "euclidean"] = "angular"
+    lr: float = 5e-3
+    zero_pad: bool = False
+    wasserstein_compare: Literal["sv", "eig", None] = "eig"
+
+@dataclass()
+class ControllabilitySimilarityTransformDistConfig:
+    score_method: Literal["euclidean", "angular"] = "euclidean"
+    compare = 'state'
+    joint_optim: bool = False
+    return_distance_components: bool = False
+
+class GeneralizedDSA:
     """
-    Computes the Dynamical Similarity Analysis (DSA) for two data tensors
+    Computes the Generalized Dynamical Similarity Analysis (DSA) for two data tensors
     """
 
     def __init__(
         self,
         X,
         Y=None,
+        X_control=None,
+        Y_control=None,
         dmd_class=DefaultDMD,
-        iters=1500,
-        score_method: Literal["angular", "euclidean", "wasserstein"] = "angular",
-        lr=5e-3,
-        zero_pad=False,
-        device="cpu",
-        wasserstein_compare: Literal["sv", "eig", None] = "eig",
-        n_jobs: int = 1,
+        similarity_class=SimilarityTransformDist,
+        dmd_config: Union[Mapping[str, Any], dataclass]= DefaultDMDConfig,
+        simdist_config: Union[Mapping[str, Any], dataclass] = SimilarityTransformDistConfig,
+        device='cpu',
         dsa_verbose=False,
-        **dmd_kwargs,
+        n_jobs=1,
     ):
         """
         Parameters
@@ -55,32 +98,16 @@ class DSA:
             * If Y is a single matrix, all matrices in X are compared to Y
             * If Y is a list, all matrices in X are compared to all matrices in Y
 
-        DMD parameters :
+        X_control : None or np.array or torch.tensor or list of np.arrays or torch.tensors
+            control data matrix/matrices.
+            Must be the same shape as X.
+            If None, then no control data is used.
 
-        n_delays : int or list or tuple/list: (int,int), (list,list),(list,int),(int,list)
-            number of delays to use in constructing the Hankel matrix
-
-        delay_interval : int or list or tuple/list: (int,int), (list,list),(list,int),(int,list)
-            interval between samples taken in constructing Hankel matrix
-
-        rank : int or list or tuple/list: (int,int), (list,list),(list,int),(int,list)
-            rank of DMD matrix fit in reduced-rank regression
-
-        rank_thresh : float or list or tuple/list: (float,float), (list,list),(list,float),(float,list)
-            Parameter that controls the rank of V in fitting HAVOK DMD by dictating a threshold
-            of singular values to use. Explicitly, the rank of V will be the number of singular
-            values greater than rank_thresh. Defaults to None.
-
-        rank_explained_variance : float or list or tuple: (float,float), (list,list),(list,float),(float,list)
-            Parameter that controls the rank of V in fitting HAVOK DMD by indicating the percentage of
-            cumulative explained variance that should be explained by the columns of V. Defaults to None.
-
-        lamb : float
-            L-1 regularization parameter in DMD fit
-
-        send_to_cpu: bool
-            If True, will send all tensors in the object back to the cpu after everything is computed.
-            This is implemented to prevent gpu memory overload when computing multiple DMDs.
+        Y_control : None or np.array or torch.tensor or list of np.arrays or torch.tensors
+            control data matrix/matrices.
+            Must be the same shape as Y.
+            If None, then no control data is used.
+        
 
         NOTE: for all of these above, they can be single values or lists or tuples,
             depending on the corresponding dimensions of the data
@@ -90,99 +117,108 @@ class DSA:
                 OR to X and Y respectively across all matrices
             If it is (list,list), then each element will correspond to an individual
                 dmd matrix indexed at the same position
-
-        SimDist parameters:
-
-        iters : int
-            number of optimization iterations in Procrustes over vector fields
-
-        score_method : {'angular','euclidean'}
-            type of metric to compute, angular vs euclidean distance
-
-        lr : float
-            learning rate of the Procrustes over vector fields optimization
-
-        zero_pad : bool
-            whether or not to zero-pad if the dimensions are different
-
-        device : 'cpu' or 'cuda' or int
-            hardware to use in both DMD and PoVF
-
-        dsa_verbose : bool
-            whether or not print when sections of the analysis is completed
-
-        wasserstein_compare : {'sv','eig',None}
-            specifies whether to compare the singular values or eigenvalues
-            if score_method is "wasserstein", or the shapes are different
+      
         """
         self.X = X
         self.Y = Y
-        self.iters = iters
-        self.score_method = score_method
-        self.lr = lr
+        self.X_control = X_control
+        self.Y_control = Y_control
+        self.simdist_config = simdist_config
+
+        if is_dataclass(simdist_config):
+            self.simdist_config = asdict(self.simdist_config)
+
         self.device = device
-        self.zero_pad = zero_pad
         self.n_jobs = n_jobs
         self.dsa_verbose = dsa_verbose
         self.dmd_class = dmd_class
 
         if self.X is None and isinstance(self.Y, list):
             self.X, self.Y = self.Y, self.X  # swap so code is easy
+            self.X_control, self.Y_control = self.Y_control, self.X_control  # swap control too
 
         self.check_method()
         if self.method == "self-pairwise":
             self.data = [self.X]
+            self.control_data = [self.X_control]
         else:
             self.data = [self.X, self.Y]
+            self.control_data = [self.X_control, self.Y_control]
 
         # Process DMD keyword arguments from **dmd_kwargs
         # These are parameters like n_delays, rank, etc., that are specific to DMDs
         # and need to be broadcasted according to X and Y data structure.
-        self.dmd_kwargs = (
+        if is_dataclass(dmd_config):
+            dmd_config = asdict(dmd_config)
+        self.dmd_config = (
             {}
         )  # This will store {'param_name': broadcasted_value_list_of_lists}
 
-        if dmd_kwargs:
-            for key, value in dmd_kwargs.items():
-                cast_type = CAST_TYPES.get(key)
+        for key, value in dmd_config.items():
+            cast_type = CAST_TYPES.get(key)
 
-                if cast_type is not None:
-                    broadcasted_value = self.broadcast_params(value, cast=cast_type)
-                else:
-                    broadcasted_value = self.broadcast_params(value)
+            if cast_type is not None:
+                broadcasted_value = self.broadcast_params(value, cast=cast_type)
+            else:
+                broadcasted_value = self.broadcast_params(value)
 
-                setattr(
-                    self, key, broadcasted_value
-                )  # e.g., self.n_delays = [[v,v],[v,v]]
-                self.dmd_kwargs[key] = (
-                    broadcasted_value  # Store in dict for DMD instantiation
-                )
+            setattr(
+                self, key, broadcasted_value
+            )  # e.g., self.n_delays = [[v,v],[v,v]]
+            self.dmd_config[key] = (
+                broadcasted_value  # Store in dict for DMD instantiation
+            )
 
-
+        self._check_dmd_simdist_compatibility(dmd_class,similarity_class)
         self._dmd_api_source(dmd_class)
         self._initiate_dmds()
+        self.simdist = similarity_class(**self.simdist_config)
 
-        self.simdist = SimilarityTransformDist(
-            iters, score_method, lr, device, dsa_verbose, wasserstein_compare
-        )
 
     def _initiate_dmds(self):
-        if self.dmd_api_source == "local_dsa_dmd":
-            self.dmds = [
-                [
-                    self.dmd_class(Xi, **{k: v[i][j] for k, v in self.dmd_kwargs.items()})
-                    for j, Xi in enumerate(dat)
-                ]
-                for i, dat in enumerate(self.data)
-            ]
+        if self.dmd_has_control and self.X_control is None and self.Y_control is None:
+            raise ValueError("Error: You are using a DMD model that fits a control operator but no control data is provided for either X or Y")
+        
+        if not self.dmd_has_control and (self.X_control is not None or self.Y_control is not None):
+            warnings.warn("You are using a DMD model with no control but control data is provided, will be ignored")
+
+
+        if self.dmd_api_source == "local_dmd":
+            self.dmds = []
+            #TODO: test this for single numpy array
+            for i, (dat, control_dat) in enumerate(zip(self.data, self.control_data)):
+                dmd_list = []
+                if control_dat is None:
+                    control_dat = [None] * len(dat)
+                for j, (Xi, Xi_control) in enumerate(zip(dat, control_dat)):
+                    config = {k: v[i][j] for k, v in self.dmd_config.items()}
+                    
+                    #
+                    if self.dmd_has_control:
+                        dmd_obj = self.dmd_class(Xi, control_data=Xi_control, **config)
+                    else:
+                        dmd_obj = self.dmd_class(Xi, **config)
+                    
+                    dmd_list.append(dmd_obj)
+                self.dmds.append(dmd_list)
         else:
             self.dmds = [
-                [self.dmd_class(**{k: v[i][j] for k, v in self.dmd_kwargs.items()}) for j, Xi in enumerate(dat)]
+                [self.dmd_class(**{k: v[i][j] for k, v in self.dmd_config.items()}) for j, Xi in enumerate(dat)]
                 for i, dat in enumerate(self.data)
             ]
+
+    def _check_dmd_simdist_compatibility(self, dmd_class, similarity_class):
+        self.dmd_has_control = dmd_class in [DefaultDMDc, SubspaceDMDc] or ('pykoopman' in dmd_class.__module__ and self.dmd_config.get('regressor') in [DMDc, EDMDc])
+        self.simdist_has_control = similarity_class in [ControllabilitySimilarityTransformDist]
+
+        if self.dmd_has_control and not self.simdist_has_control:
+            warnings.warn("Warning: You are using a DMD model that fits a control operator but comparing with a DSA metric that does not compare control operators")
+        if not self.dmd_has_control and self.simdist_has_control:
+            raise ValueError("Error: Your DMD model does not fit a control operator but comparing with a DSA metric that compares control operators")
 
     def _dmd_api_source(self, dmd_class):
         module_name = dmd_class.__module__
+
         if "pydmd" in module_name:
             self.dmd_api_source = "pydmd"
             raise ValueError("DSA is not currently directly compatible with pydmd due to \
@@ -190,8 +226,14 @@ class DSA:
                  Note that you can pass in pydmd objects through pykoopman's Koopman class.")
         elif "pykoopman" in module_name:
             self.dmd_api_source = "pykoopman"
-        elif "DSA.dmd" in module_name:
-            self.dmd_api_source = "local_dsa_dmd"
+            if self.dmd_has_control and self.dmd_config.get('regressor') in [DMDc, EDMDc]:
+                raise ValueError("Pykoopman DMDc and EDMDc are not currently compatible with DSA")
+        elif (
+            "DSA.dmd" in module_name or 
+            "DSA.subspace_dmdc" in module_name or 
+            "DSA.dmdc" in module_name
+        ):
+            self.dmd_api_source = "local_dmd"
         else:
             self.dmd_api_source = "unknown"
             raise ValueError(
@@ -202,7 +244,7 @@ class DSA:
         if self.n_jobs != 1:
             n_jobs = self.n_jobs if self.n_jobs > 0 else -1  # -1 means use all available cores
             
-            if self.dmd_api_source == "local_dsa_dmd":
+            if self.dmd_api_source == "local_dmd":
                 for dmd_sets in self.dmds:
                     if self.dsa_verbose:
                         print(f"Fitting {len(dmd_sets)} DMDs in parallel with {n_jobs} jobs")
@@ -218,7 +260,7 @@ class DSA:
                     )
         else:
             # Sequential processing
-            if self.dmd_api_source == "local_dsa_dmd":
+            if self.dmd_api_source == "local_dmd":
                 for dmd_sets in self.dmds:
                     loop = dmd_sets if not self.dsa_verbose else tqdm.tqdm(dmd_sets, desc="Fitting DMDs")
                     for dmd in loop:
@@ -236,24 +278,38 @@ class DSA:
         tensor_or_np = lambda x: isinstance(x, (np.ndarray, torch.Tensor))
 
         if isinstance(self.X, list):
+            # Ensure X_control is also a list
+            if self.X_control is not None and not isinstance(self.X_control, list):
+                self.X_control = [self.X_control]
+
             if self.Y is None:
                 self.method = "self-pairwise"
             elif isinstance(self.Y, list):
                 self.method = "bipartite-pairwise"
+                if self.Y_control is not None and not isinstance(self.Y_control, list):
+                    self.Y_control = [self.Y_control]
             elif tensor_or_np(self.Y):
                 self.method = "list-to-one"
                 self.Y = [self.Y]  # wrap in a list for iteration
+                if self.Y_control is not None:
+                    self.Y_control = [self.Y_control]
             else:
                 raise ValueError("unknown type of Y")
         elif tensor_or_np(self.X):
             self.X = [self.X]
+            if self.X_control is not None:
+                self.X_control = [self.X_control]
             if self.Y is None:
                 raise ValueError("only one element provided")
             elif isinstance(self.Y, list):
                 self.method = "one-to-list"
+                if self.Y_control is not None and not isinstance(self.Y_control, list):
+                    self.Y_control = [self.Y_control]
             elif tensor_or_np(self.Y):
                 self.method = "default"
                 self.Y = [self.Y]
+                if self.Y_control is not None:
+                    self.Y_control = [self.Y_control]
             else:
                 raise ValueError("unknown type of Y")
         else:
@@ -292,7 +348,7 @@ class DSA:
             raise ValueError("unknown type entered for parameter")
 
         if cast is not None and param is not None:
-            out = [[cast(x) for x in dat] for dat in out]
+            out = [[cast(x) if x is not None else None for x in dat] for dat in out]
 
         return out
 
@@ -313,7 +369,7 @@ class DSA:
         return self.score()
 
     def get_dmd_matrix(self, dmd):
-        if self.dmd_api_source == "local_dsa_dmd":
+        if self.dmd_api_source == "local_dmd":
             return dmd.A_v
         elif self.dmd_api_source == "pykoopman":
             return dmd.A
@@ -321,32 +377,39 @@ class DSA:
             raise ValueError("DSA is not currently compatible with pydmd due to \
                 data structure incompatibility. Please use pykoopman instead.")
 
-    def score(self, iters=None, lr=None, score_method=None):
+    def get_dmd_control_matrix(self, dmd):
+        if self.dmd_api_source == "local_dmd":
+            return dmd.B_v
+        elif self.dmd_api_source == "pykoopman":
+            return dmd.B
+        elif self.dmd_api_source == "pydmd":
+            raise ValueError("DSA is not currently compatible with pydmd due to \
+                data structure incompatibility. Please use pykoopman instead.")
+                
+    def score(self):
         """
         Score DSA with precomputed dmds 
         Parameters
         __________
-        iters : int or None
-            number of optimization steps, if None then resorts to saved self.iters
-        lr : float or None
-            learning rate, if None then resorts to saved self.lr
-        score_method : None or {'angular','euclidean'}
-            overwrites the score method in the object for this application
 
         Returns
         ________
-        score : float
+        score : float or numpy array
             similarity score of the two precomputed DMDs
+            if array is d x d, it is a standard DSA (or whatever you set it to be)
+            if array is d x d x 3 , you ran simdist_controllability with return_distance_components = True
+                This means that you returned the following similarity scores:
+                    joint similarity scores (both state and control)
+                    state similarity score (optimized jointly)
+                    control similarity score (optimized jointly)
         """
 
-        iters = self.iters if iters is None else iters
-        lr = self.lr if lr is None else lr
-        score_method = self.score_method if score_method is None else score_method
-
-        ind2 = 1 - int(self.method == "self-pairwise")
+        ind2 = 0 if self.method == "self-pairwise" else 1
         # 0 if self.pairwise (want to compare the set to itself)
-
-        self.sims = np.zeros((len(self.dmds[0]), len(self.dmds[ind2])))
+        n_sims = 1 if not (self.simdist_has_control \
+            and self.simdist_config.get("return_distance_components")) else 3
+            
+        self.sims = np.zeros((len(self.dmds[0]), len(self.dmds[ind2]),n_sims))
 
         if self.dsa_verbose:
            print('comparing dmds')
@@ -358,14 +421,17 @@ class DSA:
             if self.dsa_verbose and self.n_jobs != 1:
                 print(f"computing similarity between DMDs {i} and {j}")
                 
-            sim = self.simdist.fit_score(
-                self.get_dmd_matrix(self.dmds[0][i]),
-                self.get_dmd_matrix(self.dmds[ind2][j]),
-                iters,
-                lr,
-                score_method,
-                zero_pad=self.zero_pad,
-            )
+            simdist_args = [
+                    self.get_dmd_matrix(self.dmds[0][i]),
+                    self.get_dmd_matrix(self.dmds[ind2][j]),
+            ]
+            if self.dmd_has_control:
+                simdist_args.extend([
+                    self.get_dmd_control_matrix(self.dmds[0][i]),
+                    self.get_dmd_control_matrix(self.dmds[ind2][j]),
+                ])
+            sim = self.simdist.fit_score(*simdist_args)
+
             if self.dsa_verbose and self.n_jobs != 1:
                 print(f"computing similarity between DMDs {i} and {j}")
             
@@ -397,6 +463,79 @@ class DSA:
                     self.sims[j, i] = sim
         
         if self.method == "default":
-            return self.sims[0, 0]
+            return self.sims[0, 0].squeeze()
 
-        return self.sims
+        return self.sims.squeeze()
+
+
+class DSA(GeneralizedDSA):
+    def __init__(
+        self,
+        X,
+        Y=None,
+        dmd_class=DefaultDMD,
+        device='cpu',
+        dsa_verbose=False,
+        n_jobs=1,
+        # Advanced simdist parameters
+        score_method: Literal["angular", "euclidean"] = "angular",
+        iters: int = 1500,
+        lr: float = 5e-3,
+        zero_pad: bool = False,
+        wasserstein_compare: Literal["sv", "eig", None] = "eig",
+        **dmd_kwargs
+    ):
+        #TODO: add readme
+        # Build simdist_config internally
+        simdist_config = {
+            'score_method': score_method,
+            'iters': iters,
+            'lr': lr,
+            'zero_pad': zero_pad,
+            'wasserstein_compare': wasserstein_compare,
+        }
+
+        dmd_config = dmd_kwargs
+        
+        super().__init__(
+            X=X,
+            Y=Y,
+            X_control=None,
+            Y_control=None,
+            dmd_class=dmd_class,
+            similarity_class=SimilarityTransformDist,
+            dmd_config=dmd_config,
+            simdist_config=simdist_config,
+            device=device,
+            dsa_verbose=dsa_verbose,
+            n_jobs=n_jobs,
+        )
+
+class InputDSA(GeneralizedDSA):
+    def __init__(
+        self,
+        X,
+        X_control,
+        Y=None,
+        Y_control=None,
+        dmd_class=SubspaceDMDc,
+        similarity_class=ControllabilitySimilarityTransformDist,
+        dmd_config: Union[Mapping[str, Any], dataclass]= SubspaceDMDcConfig,
+        simdist_config: Union[Mapping[str, Any], dataclass] = ControllabilitySimilarityTransformDistConfig,
+        device='cpu',
+        dsa_verbose=False,
+        n_jobs=1,
+    ):
+        super().__init__(
+            X,
+            Y,
+            X_control,
+            Y_control,
+            dmd_class,
+            similarity_class,
+            dmd_config,
+            simdist_config,
+            device,
+            dsa_verbose,
+            n_jobs,
+        )

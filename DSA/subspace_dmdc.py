@@ -2,14 +2,15 @@
 import numpy as np
 import torch
 #TODO: convert to torch below to match the DMD class
+#TODO: fix time-first argument to match the DMD class
 
-class subspaceDMDc():
+class SubspaceDMDc():
     """Subspace DMDc class for computing and predicting with DMD with control models.
     """
     def __init__(
             self,
             data,
-            control_data=None,
+            control_data,
             n_delays=1,
             rank=None,
             lamb=1e-8,

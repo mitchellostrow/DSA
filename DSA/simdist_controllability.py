@@ -13,35 +13,37 @@ class ControllabilitySimilarityTransformDist:
         self,
         *,
         score_method: Literal["euclidean", "angular"] = "euclidean",
-        alpha: float = 0.5,
+        compare: Literal['joint','control','state'] = 'joint',
         joint_optim: bool = False,
+        return_distance_components=True
     ):
-        """
+        f"""
         Parameters
         ----------
         score_method : {"euclidean", "angular"}
             Distance method to use. Euclidean uses Frobenius norm, angular uses principal angles.
-        alpha : float
-            Weight (only used if you call fit_score with non-default behavior).
+        compare: {'joint','control','state'}
+            what type of comparison to do on the A and B matrices
         align_inputs : bool
             If True, do two-sided Procrustes on controllability matrices (solve for C and C_u).
         """
         self.score_method = score_method
-        self.alpha = alpha
+        self.compare = compare
         self.joint_optim = joint_optim
+        self.return_distance_components=return_distance_components
 
 
-    def fit_score(self, A, B, A_control, B_control, alpha=0.5, return_distance_components=False):
+    def fit_score(self, A, B, A_control, B_control):
+        
         C, C_u, sims_joint_euc, sims_joint_ang = self.compare_systems_procrustes(
             A1=A, B1=A_control, A2=B, B2=B_control, align_inputs=self.joint_optim
         )
  
 
-        alpha = self.alpha if alpha is None else alpha
         score_method = self.score_method
 
-        if alpha == 0.5:
-            if return_distance_components:
+        if self.compare == 'joint':
+            if self.return_distance_components:
                 if self.score_method == 'euclidean':
                     # sims_control_joint = np.linalg.norm(C @ A_control @ C_u - B_control, "fro") ** 2
                     # sims_state_joint = np.linalg.norm(C @ A @ C.T - B, "fro") ** 2
@@ -68,7 +70,7 @@ class ControllabilitySimilarityTransformDist:
                 else:
                     raise ValueError('Choose between Euclidean or angular distance')
 
-        elif alpha == 0.0:
+        elif self.compare:
             return self.compare_A(A, B, score_method=score_method)
 
         else:
@@ -109,7 +111,7 @@ class ControllabilitySimilarityTransformDist:
             K = K_test
         return K
 
-    def compare_systems_procrustes(self, A1, B1, A2, B2, *, align_inputs=False, n=100):
+    def compare_systems_procrustes(self, A1, B1, A2, B2, *,align_inputs=False):
         """
         Compares two LTI systems by finding the optimal orthogonal transformation
         that aligns their controllability matrices.
@@ -155,12 +157,6 @@ class ControllabilitySimilarityTransformDist:
         C   = U1 @ U2.T
         C_u = V2t.T @ V1t  # = V2 @ V1^T
         
-        # import matplotlib.pyplot as plt
-        # plt.imshow(C_u)
-        # plt.savefig('C_u.png')
-
-        #TODO: truncate C_u
-        #TODO: compute error on A and B instead of the observability matrix
         K2_aligned = C @ K2 @ C_u
         err = np.linalg.norm(K1 - K2_aligned, "fro")
         cos_sim = (np.vdot(K1, K2_aligned).real /

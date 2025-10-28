@@ -29,8 +29,6 @@ def sweep_ranks_delays(
     train_frac=0.8,
     reseed=5,
     return_residuals=True,
-    featurize=False,
-    ndim=None,
     return_transient_growth=False,
     return_mse=False,
     error_space='X',
@@ -53,10 +51,6 @@ def sweep_ranks_delays(
         Reseed for DMD prediction.
     return_residuals : bool
         Whether to return residuals.
-    featurize : bool
-        Whether to featurize the data (for special cases).
-    ndim : int or None
-        Number of dimensions to use if featurizing.
     measure_transient_growth : bool
         Whether to measure transient growth (numerical abscissa and l2 norm).
     return_mse: bool
