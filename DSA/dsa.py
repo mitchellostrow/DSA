@@ -32,18 +32,65 @@ CAST_TYPES = {
 #___Example config dataclasses for DMD #
 @dataclass()
 class DefaultDMDConfig:
+    """
+    Configuration dataclass for DefaultDMD (standard DMD without control).
+    
+    This configuration is used to set parameters for the DefaultDMD class when
+    performing Dynamical Mode Decomposition on time series data.
+    
+    Attributes:
+        n_delays (int): Number of time delays to use in the Hankel matrix construction.
+            Default is 1 (no delays).
+        delay_interval (int): Interval between delays in the Hankel matrix.
+            Default is 1 (consecutive time steps).
+        rank (int): Rank for SVD truncation. If None, no truncation is performed.
+            Default is None.
+        lamb (float): Regularization parameter for ridge regression.
+            Default is 0 (no regularization).
+        send_to_cpu (bool): Whether to move computations to CPU.
+            Default is False (use GPU if available).
+    """
     n_delays: int = 1
     delay_interval: int = 1
     rank: int = None
     lamb: float = 0
     send_to_cpu: bool = False
+
 @dataclass()
 class pyKoopmanDMDConfig:
+    """
+    Configuration dataclass for pyKoopman DMD models.
+    
+    This configuration is used to set up pyKoopman observables and regressors
+    for performing DMD analysis with the pyKoopman library.
+    
+    Attributes:
+        observables: Observable function from pykoopman. Default is TimeDelay with n_delays=1.
+        regressor: Regressor model from pydmd. Default is DMD with svd_rank=2.
+    """
     observables = pykoopman.observables.TimeDelay(n_delays=1)
     regressor = pydmd.DMD(svd_rank=2)
     
 @dataclass()
 class SubspaceDMDcConfig:
+    """
+    Configuration dataclass for SubspaceDMDc (DMD with control using subspace identification).
+    
+    This configuration is used to set parameters for the SubspaceDMDc class when
+    performing Dynamical Mode Decomposition on controlled systems.
+    
+    Attributes:
+        n_delays (int): Number of time delays to use in the Hankel matrix construction.
+            Default is 1 (no delays).
+        delay_interval (int): Interval between delays in the Hankel matrix.
+            Default is 1 (consecutive time steps).
+        rank (int): Rank for SVD truncation. If None, no truncation is performed.
+            Default is None.
+        lamb (float): Regularization parameter for ridge regression.
+            Default is 0 (no regularization).
+        backend (str): Subspace identification backend to use.
+            Options: 'n4sid', 'custom'.
+    """
     n_delays: int = 1
     delay_interval: int = 1
     rank: int = None
@@ -53,14 +100,48 @@ class SubspaceDMDcConfig:
 #__Example config dataclasses for similarity transform distance #
 @dataclass
 class SimilarityTransformDistConfig:
+    """
+    Configuration dataclass for SimilarityTransformDist (standard similarity transform distance).
+    
+    This configuration is used to compute the similarity transform distance between
+    two DMD matrices, which measures how similar two dynamical systems are.
+    
+    Attributes:
+        iters (int): Number of optimization iterations for finding the similarity transform.
+            Default is 1500.
+        score_method (Literal["angular", "euclidean","wasserstein"]): Method for computing the distance score.
+            'angular' uses angular distance, 'euclidean' uses Euclidean distance.
+            Default is "angular".
+        lr (float): Learning rate for the optimization algorithm.
+            Default is 5e-3.
+        zero_pad (bool): Whether to zero-pad matrices to make them the same size.
+            Default is False.
+    """
     iters: int = 1500
-    score_method: Literal["angular", "euclidean"] = "angular"
+    score_method: Literal["angular", "euclidean","wasserstein"] = "angular"
     lr: float = 5e-3
     zero_pad: bool = False
-    wasserstein_compare: Literal["sv", "eig", None] = "eig"
 
 @dataclass()
 class ControllabilitySimilarityTransformDistConfig:
+    """
+    Configuration dataclass for ControllabilitySimilarityTransformDist (similarity transform distance with control).
+    
+    This configuration is used to compute the similarity transform distance between
+    two controlled DMD systems, comparing both state and control operators.
+    
+    Attributes:
+        score_method (Literal["euclidean", "angular"]): Method for computing the distance score.
+            'angular' uses angular distance, 'euclidean' uses Euclidean distance.
+            Default is "euclidean".
+        compare (str): What to compare between systems.
+            'state' compares only state operators, 'control' compares only control operators,
+            'joint' compares both. Default is 'state'.
+        joint_optim (bool): Whether to optimize state and control operators jointly.
+            Default is False.
+        return_distance_components (bool): Whether to return individual distance components
+            (state, control, joint) separately. Default is False.
+    """
     score_method: Literal["euclidean", "angular"] = "euclidean"
     compare = 'state'
     joint_optim: bool = False
@@ -68,7 +149,28 @@ class ControllabilitySimilarityTransformDistConfig:
 
 class GeneralizedDSA:
     """
-    Computes the Generalized Dynamical Similarity Analysis (DSA) for two data tensors
+    Computes the Generalized Dynamical Similarity Analysis (DSA) for two data tensors.
+    
+    This class performs Dynamical Mode Decomposition (DMD) on input data and then computes
+    similarity scores between the resulting DMD models using similarity transform distances.
+    It supports various comparison modes including pairwise comparisons, bipartite comparisons,
+    and comparisons with control inputs.
+    
+    The class handles:
+    - Multiple data formats (single arrays, lists of arrays)
+    - Different DMD implementations (local DMD, pyKoopman, etc.)
+    - Control inputs for controlled systems
+    - Parallel processing for efficiency
+    - Various similarity metrics
+    
+    Example usage:
+        # Compare two datasets
+        dsa = GeneralizedDSA(X=data1, Y=data2, dmd_class=DefaultDMD)
+        similarity_score = dsa.fit_score()
+        
+        # Pairwise comparison of multiple datasets
+        dsa = GeneralizedDSA(X=[data1, data2, data3], Y=None)
+        similarity_matrix = dsa.fit_score()
     """
 
     def __init__(
@@ -109,6 +211,27 @@ class GeneralizedDSA:
             Must be the same shape as Y.
             If None, then no control data is used.
         
+        dmd_class : class
+            DMD class to use for decomposition. Default is DefaultDMD.
+            
+        similarity_class : class
+            Similarity transform distance class to use. Default is SimilarityTransformDist.
+            
+        dmd_config : Union[Mapping[str, Any], dataclass]
+            Configuration for DMD parameters. Can be a dict or dataclass.
+            
+        simdist_config : Union[Mapping[str, Any], dataclass]
+            Configuration for similarity transform distance parameters. Can be a dict or dataclass.
+            
+        device : str
+            Device to use for computation ('cpu' or 'cuda'). Default is 'cpu'.
+            
+        dsa_verbose : bool
+            Whether to print verbose output during computation. Default is False.
+            
+        n_jobs : int
+            Number of parallel jobs to use. Default is 1 (sequential).
+            Set to -1 to use all available cores.
 
         NOTE: for all of these above, they can be single values or lists or tuples,
             depending on the corresponding dimensions of the data
