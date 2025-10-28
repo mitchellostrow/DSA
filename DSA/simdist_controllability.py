@@ -18,7 +18,7 @@ class ControllabilitySimilarityTransformDist:
         score_method: Literal["euclidean", "angular"] = "euclidean",
         compare: Literal['joint','control','state'] = 'joint',
         joint_optim: bool = False,
-        return_distance_components=True
+        return_distance_components: bool =True
     ):
         f"""
         Parameters
@@ -29,6 +29,8 @@ class ControllabilitySimilarityTransformDist:
             what type of comparison to do on the A and B matrices
         align_inputs : bool
             If True, do two-sided Procrustes on controllability matrices (solve for C and C_u).
+        return_distance_components: bool
+            If True, returns the jointly optimized controllability score, the jointly optimize state score, and the jointly optimized control score
         """
         self.score_method = score_method
         self.compare = compare
@@ -186,6 +188,9 @@ class ControllabilitySimilarityTransformDist:
 
     @staticmethod
     def compare_B(B1, B2, score_method='euclidean'):
+        '''
+        compares the B matrices with left procrustes
+        '''
         if score_method == 'euclidean':
             R, _ = orthogonal_procrustes(B2.T, B1.T)
             return np.linalg.norm(B1 - R.T @ B2, "fro") 
