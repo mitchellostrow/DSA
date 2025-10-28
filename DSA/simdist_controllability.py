@@ -35,6 +35,23 @@ class ControllabilitySimilarityTransformDist:
         self.joint_optim = joint_optim
         self.return_distance_components=return_distance_components
 
+    @staticmethod
+    def compute_angular_dist(A, B):
+        """
+        Computes the angular distance between two matrices A and B.
+        
+        Args:
+            A (np.ndarray): First matrix
+            B (np.ndarray): Second matrix
+            
+        Returns:
+            float: Angular distance between A and B
+        """
+        cos_sim = np.trace(A.T @ B) / (np.linalg.norm(A, 'fro') * np.linalg.norm(B, 'fro'))
+        cos_sim = np.clip(cos_sim, -1, 1)
+        cos_sim = np.arccos(cos_sim)
+        cos_sim = np.clip(cos_sim, 0, np.pi)
+        return cos_sim
 
     def fit_score(self, A, B, A_control, B_control):
         
@@ -54,16 +71,8 @@ class ControllabilitySimilarityTransformDist:
                     sims_state_joint = np.linalg.norm(C @ A @ C.T - B, "fro") 
                     return sims_joint_euc, sims_state_joint, sims_control_joint
                 elif self.score_method == 'angular':
-                    sims_control_joint = np.trace((C @ A_control @ C_u).T @ B_control) / (np.linalg.norm(C @ A_control @ C_u, 'fro') * np.linalg.norm(B_control, 'fro'))
-                    sims_state_joint = np.trace((C @ A @ C.T).T @ B) / (np.linalg.norm(C @ A @ C.T, 'fro') * np.linalg.norm(B, 'fro'))
-
-                    sims_control_joint = np.clip(sims_control_joint, -1, 1)
-                    sims_state_joint = np.clip(sims_state_joint, -1, 1)
-                    sims_control_joint =np.arccos(sims_control_joint)
-                    sims_state_joint =np.arccos(sims_state_joint)
-                    sims_control_joint = np.clip(sims_control_joint, 0, np.pi)
-                    sims_state_joint = np.clip(sims_state_joint, 0, np.pi)
-
+                    sims_control_joint = self.compute_angular_dist(C @ A_control @ C_u, B_control)
+                    sims_state_joint = self.compute_angular_dist(C @ A @ C.T, B)
                     return sims_joint_ang, sims_state_joint, sims_control_joint
             else:
                 if self.score_method == 'euclidean':
@@ -73,7 +82,7 @@ class ControllabilitySimilarityTransformDist:
                 else:
                     raise ValueError('Choose between Euclidean or angular distance')
 
-        elif self.compare:
+        elif self.compare == 'state':
             return self.compare_A(A, B, score_method=score_method)
 
         else:
@@ -170,10 +179,10 @@ class ControllabilitySimilarityTransformDist:
         
         return C, C_u, err, cos_sim
 
-    @staticmethod
-    def compare_A(A1, A2, score_method='euclidean'):
-        simdist = SimilarityTransformDist(iters=1000, score_method=score_method, lr=1e-3, verbose=True)
-        return simdist.fit_score(A1, A2, score_method=score_method)
+    # @staticmethod
+    # def compare_A(A1, A2, score_method='euclidean'):
+        # simdist = SimilarityTransformDist(iters=1000, score_method=score_method, lr=1e-3, verbose=True)
+        # return simdist.fit_score(A1, A2, score_method=score_method)
 
     @staticmethod
     def compare_B(B1, B2, score_method='euclidean'):
@@ -182,7 +191,8 @@ class ControllabilitySimilarityTransformDist:
             return np.linalg.norm(B1 - R.T @ B2, "fro") 
             # return np.linalg.norm(B1 - R.T @ B2, "fro") ** 2
         elif score_method == 'angular':
-            return np.trace(B1.T @ (R.T @ B2)) / (np.linalg.norm(B1, 'fro') * np.linalg.norm(R.T @ B2, 'fro'))
+            R, _ = orthogonal_procrustes(B2.T, B1.T)
+            return ControllabilitySimilarityTransformDist.compute_angular_dist(B1, R.T @ B2)
         else:
             raise ValueError('Choose between Euclidean or angular distance')
 
