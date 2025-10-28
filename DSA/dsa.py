@@ -11,6 +11,7 @@ import tqdm
 from joblib import Parallel, delayed
 from dataclasses import dataclass, is_dataclass, asdict
 import DSA.pykoopman as pykoopman
+import pydmd
 from DSA.pykoopman.regression import DMDc, EDMDc
 from typing import Union, Mapping, Any
 import warnings
@@ -38,8 +39,8 @@ class DefaultDMDConfig:
     send_to_cpu: bool = False
 @dataclass()
 class pyKoopmanDMDConfig:
-    observables: pykoopman.observables.BaseObservables = pykoopman.observables.TimeDelay(n_delays=1)
-    regressor = pykoopman.regression.DMD(svd_rank=2)
+    observables = pykoopman.observables.TimeDelay(n_delays=1)
+    regressor = pydmd.DMD(svd_rank=2)
     
 @dataclass()
 class SubspaceDMDcConfig:
@@ -481,7 +482,6 @@ class DSA(GeneralizedDSA):
         score_method: Literal["angular", "euclidean"] = "angular",
         iters: int = 1500,
         lr: float = 5e-3,
-        zero_pad: bool = False,
         wasserstein_compare: Literal["sv", "eig", None] = "eig",
         **dmd_kwargs
     ):
@@ -491,7 +491,6 @@ class DSA(GeneralizedDSA):
             'score_method': score_method,
             'iters': iters,
             'lr': lr,
-            'zero_pad': zero_pad,
             'wasserstein_compare': wasserstein_compare,
         }
 

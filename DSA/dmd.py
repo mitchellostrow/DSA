@@ -77,7 +77,7 @@ class DMD(BaseDMD):
     def __init__(
         self,
         data,
-        n_delays,
+        n_delays=1,
         delay_interval=1,
         rank=None,
         rank_thresh=None,

@@ -2,7 +2,10 @@ from typing import Literal
 import numpy as np
 from scipy.linalg import orthogonal_procrustes
 
-from DSA.simdist import SimilarityTransformDist 
+try:
+    from .simdist import SimilarityTransformDist
+except ImportError:
+    from simdist import SimilarityTransformDist 
 
 class ControllabilitySimilarityTransformDist:
     """

@@ -6,7 +6,10 @@ import numpy as np
 import torch.nn.utils.parametrize as parametrize
 from scipy.stats import wasserstein_distance
 import ot  # optimal transport for multidimensional l2 wasserstein
-from DSA import DMD
+try:
+    from .dmd import DMD
+except ImportError:
+    from dmd import DMD
 
 
 def pad_zeros(A, B, device):

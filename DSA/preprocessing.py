@@ -4,7 +4,10 @@ from sklearn.manifold import Isomap, LocallyLinearEmbedding
 from sklearn.decomposition import PCA
 from sklearn.pipeline import make_pipeline
 from sklearn.kernel_approximation import Nystroem
-from DSA.dmd import embed_signal_torch
+try:
+    from .dmd import embed_signal_torch
+except ImportError:
+    from dmd import embed_signal_torch
 from scipy.signal import convolve
 
 

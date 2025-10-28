@@ -2,7 +2,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import cm
 from matplotlib import colors as mcolors
-from DSA.dmd import DMD
+try:
+    from .dmd import DMD
+except ImportError:
+    from dmd import DMD
 import torch
 import ot
 from typing import Literal
