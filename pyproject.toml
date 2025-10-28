@@ -1,6 +1,6 @@
 [project]
 name = "dsa-metric"
-version = "1.0.2"
+version = "2.0.0"
 authors = [
   { name="Mitchell Ostrow", email="ostrow@mit.edu" },
 ]
@@ -17,9 +17,13 @@ license-files = ["LICENSE*"]
 dependencies = [
     "numpy>=1.24.0,<2",
     "torch>=1.3.0",
-    "kooplearn>=1.1.0",
     "pot",
     "omegaconf",
+    "pydmd",
+    "tqdm",
+    "optht",
+    "derivative",
+    "lightning"
 ]
 
 [project.optional-dependencies]

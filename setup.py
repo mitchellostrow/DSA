@@ -14,6 +14,11 @@ setuptools.setup(
         "pot",
         "omegaconf",
         "pydmd",
+        "tqdm",
+        "optht", #for havok in pykoopman
+        "derivative", #for pykoopman
+        "lightning" #for nndmd in pykoopman
+        "prettytable"
     ],
     extras_require={"dev": ["pytest>=3.7"]},
 )

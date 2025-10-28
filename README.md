@@ -16,6 +16,7 @@ In control problems and basic scientific modeling, it is important to compare ob
 on dynamical systems
 
 Code Authors: Mitchell Ostrow, Adam Eisen, Leo Kozachkov, Ann Huang
+Formatted using the Black Style (https://black.readthedocs.io/en/stable/)
 
 If you use this code, please cite:
 ```

@@ -61,13 +61,10 @@ class ControllabilitySimilarityTransformDist:
 
     def fit_score(self, A, B, A_control, B_control):
 
-        C, C_u, sims_joint_euc, sims_joint_ang = self.compare_systems_procrustes(
-            A1=A, B1=A_control, A2=B, B2=B_control, align_inputs=self.joint_optim
-        )
-
-        score_method = self.score_method
-
         if self.compare == "joint":
+            C, C_u, sims_joint_euc, sims_joint_ang = self.compare_systems_procrustes(
+                A1=A, B1=A_control, A2=B, B2=B_control, align_inputs=self.joint_optim
+            )
             if self.return_distance_components:
                 if self.score_method == "euclidean":
                     # sims_control_joint = np.linalg.norm(C @ A_control @ C_u - B_control, "fro") ** 2
@@ -98,7 +95,7 @@ class ControllabilitySimilarityTransformDist:
             )
 
         else:
-            return self.compare_B(A_control, B_control, score_method=score_method)
+            return self.compare_B(A_control, B_control, score_method=self.score_method)
 
     def get_controllability_matrix(self, A, B):
         """

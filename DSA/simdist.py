@@ -175,6 +175,7 @@ class SimilarityTransformDist:
         self.B = None
         self.eps = eps
         self.rescale_wasserstein = rescale_wasserstein
+        self.wasserstein_compare = 'eig' # for backwards compatibility
 
     def fit(
         self,
@@ -216,11 +217,6 @@ class SimilarityTransformDist:
         self.A, self.B = A, B
         lr = self.lr if lr is None else lr
         iters = self.iters if iters is None else iters
-        wasserstein_compare = (
-            self.wasserstein_compare
-            if wasserstein_compare is None
-            else wasserstein_compare
-        )
         score_method = self.score_method if score_method is None else score_method
 
         if score_method == "wasserstein":

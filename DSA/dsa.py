@@ -676,10 +676,9 @@ class DSA(GeneralizedDSA):
         dsa_verbose=False,
         n_jobs=1,
         # simdist parameters
-        score_method: Literal["angular", "euclidean"] = "angular",
+        score_method: Literal["angular", "euclidean","wasserstein"] = "angular",
         iters: int = 1500,
         lr: float = 5e-3,
-        wasserstein_compare: Literal["sv", "eig", None] = "eig",
         **dmd_kwargs,
     ):
         # TODO: add readme
@@ -687,7 +686,6 @@ class DSA(GeneralizedDSA):
             "score_method": score_method,
             "iters": iters,
             "lr": lr,
-            "wasserstein_compare": wasserstein_compare,
         }
 
         dmd_config = dmd_kwargs
@@ -733,10 +731,7 @@ class InputDSA(GeneralizedDSA):
             raise ValueError(
                 "unknown data type for simdist-config, use dataclass or dict"
             )
-        if compare == "state":
-            simdist = SimilarityTransformDist
-        else:
-            simdist = ControllabilitySimilarityTransformDist
+        simdist = self.update_compare_method(compare)
 
         super().__init__(
             X,
@@ -754,3 +749,11 @@ class InputDSA(GeneralizedDSA):
 
         assert X_control is not None
         assert self.dmd_has_control
+
+    def update_compare_method(self,compare='joint'):
+        if compare == "state":
+            simdist = SimilarityTransformDist
+        else:
+            simdist = ControllabilitySimilarityTransformDist
+        return simdist
+

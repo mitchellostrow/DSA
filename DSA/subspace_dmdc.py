@@ -1,4 +1,7 @@
-"""This module computes the subspace DMD with control (DMDc) model for a given dataset."""
+"""
+This module computes the subspace DMD with control (DMDc) model for a given dataset.
+Code is partially derived from and inspired by https://github.com/spmvg/nfoursid/tree/master
+"""
 
 import numpy as np
 import torch
