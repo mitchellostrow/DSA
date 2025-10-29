@@ -91,7 +91,9 @@ class DMDc(BaseDMD):
             Regularization parameter for ridge regression. Defaults to 0.
 
         device: string, int, or torch.device
-            A string, int or torch.device object to indicate the device to torch.
+            Device for computation. Options:
+            - 'cpu': Use CPU with PyTorch
+            - 'cuda' or 'cuda:X': Use GPU (auto-falls back to CPU if unavailable)
 
         verbose: bool
             If True, print statements will be provided about the progress of the fitting procedure.
@@ -107,6 +109,10 @@ class DMDc(BaseDMD):
         super().__init__(
             device=device, verbose=verbose, send_to_cpu=send_to_cpu, lamb=lamb
         )
+        
+        # Smart device setup with graceful CUDA fallback
+        # DMDc always uses PyTorch, so use_torch=True
+        self.device, self.use_torch = self._setup_device(device, use_torch=True)
 
         self._init_data(data, control_data)
 

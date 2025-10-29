@@ -197,7 +197,7 @@ class GeneralizedDSA:
             Mapping[str, Any], dataclass
         ] = SimilarityTransformDistConfig,
         device="cpu",
-        dsa_verbose=False,
+        verbose=False,
         n_jobs=1,
     ):
         """
@@ -239,7 +239,7 @@ class GeneralizedDSA:
         device : str
             Device to use for computation ('cpu' or 'cuda'). Default is 'cpu'.
 
-        dsa_verbose : bool
+        verbose : bool
             Whether to print verbose output during computation. Default is False.
 
         n_jobs : int
@@ -267,7 +267,7 @@ class GeneralizedDSA:
 
         self.device = device
         self.n_jobs = n_jobs
-        self.dsa_verbose = dsa_verbose
+        self.verbose = verbose
         self.dmd_class = dmd_class
 
         if self.X is None and isinstance(self.Y, list):
@@ -409,7 +409,7 @@ class GeneralizedDSA:
 
             if self.dmd_api_source == "local_dmd":
                 for dmd_sets in self.dmds:
-                    if self.dsa_verbose:
+                    if self.verbose:
                         print(
                             f"Fitting {len(dmd_sets)} DMDs in parallel with {n_jobs} jobs"
                         )
@@ -418,7 +418,7 @@ class GeneralizedDSA:
                     )
             else:
                 for dmd_list, dat in zip(self.dmds, self.data):
-                    if self.dsa_verbose:
+                    if self.verbose:
                         print(
                             f"Fitting {len(dmd_list)} DMDs in parallel with {n_jobs} jobs"
                         )
@@ -432,7 +432,7 @@ class GeneralizedDSA:
                 for dmd_sets in self.dmds:
                     loop = (
                         dmd_sets
-                        if not self.dsa_verbose
+                        if not self.verbose
                         else tqdm.tqdm(dmd_sets, desc="Fitting DMDs")
                     )
                     for dmd in loop:
@@ -441,7 +441,7 @@ class GeneralizedDSA:
                 for dmd_list, dat in zip(self.dmds, self.data):
                     loop = (
                         zip(dmd_list, dat)
-                        if not self.dsa_verbose
+                        if not self.verbose
                         else tqdm.tqdm(zip(dmd_list, dat), desc="Fitting DMDs")
                     )
                     for dmd, Xi in loop:
@@ -601,14 +601,14 @@ class GeneralizedDSA:
 
         self.sims = np.zeros((len(self.dmds[0]), len(self.dmds[ind2]), n_sims))
 
-        if self.dsa_verbose:
+        if self.verbose:
             print("comparing dmds")
 
         def compute_similarity(i, j):
             if self.method == "self-pairwise" and j >= i:
                 return None
 
-            if self.dsa_verbose and self.n_jobs != 1:
+            if self.verbose and self.n_jobs != 1:
                 print(f"computing similarity between DMDs {i} and {j}")
 
             simdist_args = [
@@ -624,7 +624,7 @@ class GeneralizedDSA:
                 )
             sim = self.simdist.fit_score(*simdist_args)
 
-            if self.dsa_verbose and self.n_jobs != 1:
+            if self.verbose and self.n_jobs != 1:
                 print(f"computing similarity between DMDs {i} and {j}")
 
             return (i, j, sim)
@@ -637,7 +637,7 @@ class GeneralizedDSA:
 
         if self.n_jobs != 1:
             n_jobs = self.n_jobs if self.n_jobs > 0 else -1
-            if self.dsa_verbose:
+            if self.verbose:
                 print(
                     f"Computing {len(pairs)} DMD similarities in parallel with {n_jobs} jobs"
                 )
@@ -648,7 +648,7 @@ class GeneralizedDSA:
         else:
             loop = (
                 pairs
-                if not self.dsa_verbose
+                if not self.verbose
                 else tqdm.tqdm(pairs, desc="Computing DMD similarities")
             )
             results = [compute_similarity(i, j) for i, j in loop]
@@ -673,7 +673,7 @@ class DSA(GeneralizedDSA):
         Y=None,
         dmd_class=DefaultDMD,
         device="cpu",
-        dsa_verbose=False,
+        verbose=False,
         n_jobs=1,
         # simdist parameters
         score_method: Literal["angular", "euclidean","wasserstein"] = "angular",
@@ -700,7 +700,7 @@ class DSA(GeneralizedDSA):
             dmd_config=dmd_config,
             simdist_config=simdist_config,
             device=device,
-            dsa_verbose=dsa_verbose,
+            verbose=verbose,
             n_jobs=n_jobs,
         )
 
@@ -718,9 +718,11 @@ class InputDSA(GeneralizedDSA):
             Mapping[str, Any], dataclass
         ] = ControllabilitySimilarityTransformDistConfig,
         device="cpu",
-        dsa_verbose=False,
+        verbose=False,
         n_jobs=1,
+        compare = 'joint'
     ):
+        #TODO: fix based on making compare argument explicit
         # check if simdist_config has 'compare', and if it's 'state', use the standard SimilarityTransformDist,
         # otherwise use ControllabilitySimilarityTransformDistConfig
         if isinstance(simdist_config, dataclass):
@@ -743,7 +745,7 @@ class InputDSA(GeneralizedDSA):
             dmd_config,
             simdist_config,
             device,
-            dsa_verbose,
+            verbose,
             n_jobs,
         )
 

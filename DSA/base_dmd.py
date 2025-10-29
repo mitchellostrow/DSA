@@ -2,6 +2,7 @@
 
 import numpy as np
 import torch
+import warnings
 from abc import ABC, abstractmethod
 
 
@@ -20,6 +21,7 @@ class BaseDMD(ABC):
         ----------
         device: string, int, or torch.device
             A string, int or torch.device object to indicate the device to torch.
+            If 'cuda' or 'cuda:X' is specified but not available, will fall back to 'cpu' with a warning.
         verbose: bool
             If True, print statements will be provided about the progress of the fitting procedure.
         send_to_cpu: bool
@@ -41,6 +43,68 @@ class BaseDMD(ABC):
 
         # SVD attributes - will be set by subclasses
         self.cumulative_explained_variance = None
+    
+    def _setup_device(self, device='cpu', use_torch=None):
+        """
+        Smart device setup with graceful fallback and auto-detection.
+        
+        Parameters
+        ----------
+        device : str or torch.device
+            Requested device ('cpu', 'cuda', 'cuda:0', etc.)
+        use_torch : bool or None
+            Whether to use PyTorch. If None, auto-detected:
+            - True if device contains 'cuda'
+            - False otherwise (numpy is faster on CPU)
+        
+        Returns
+        -------
+        tuple
+            (device, use_torch) - validated device and use_torch flag
+        """
+        # Convert device to string for checking
+        device_str = str(device).lower()
+        
+        # Auto-detect use_torch if not specified
+        if use_torch is None:
+            use_torch = 'cuda' in device_str
+        
+        # If CUDA requested, check availability
+        if 'cuda' in device_str:
+            if not torch.cuda.is_available():
+                warnings.warn(
+                    f"CUDA device '{device}' requested but CUDA is not available. "
+                    "Falling back to CPU with NumPy. "
+                    "To use GPU acceleration, ensure PyTorch with CUDA support is installed.",
+                    RuntimeWarning,
+                    stacklevel=3
+                )
+                device = 'cpu'
+                use_torch = False  # Use numpy on CPU for better performance
+            else:
+                # CUDA is available, verify the specific device exists
+                try:
+                    test_device = torch.device(device)
+                    # Test if we can actually use this device
+                    torch.tensor([1.0], device=test_device)
+                    use_torch = True
+                except (RuntimeError, AssertionError) as e:
+                    warnings.warn(
+                        f"CUDA device '{device}' requested but not accessible: {e}. "
+                        f"Falling back to CPU with NumPy.",
+                        RuntimeWarning,
+                        stacklevel=3
+                    )
+                    device = 'cpu'
+                    use_torch = False
+        
+        # Convert to torch.device if using torch
+        if use_torch:
+            device = torch.device(device)
+        else:
+            device = None  # Use numpy (no torch device needed)
+        
+        return device, use_torch
 
     def _process_single_dataset(self, data):
         """Process a single dataset, handling numpy arrays, tensors, and lists."""

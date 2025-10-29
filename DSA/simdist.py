@@ -6,6 +6,7 @@ import numpy as np
 import torch.nn.utils.parametrize as parametrize
 from scipy.stats import wasserstein_distance
 import ot  # optimal transport for multidimensional l2 wasserstein
+import warnings
 
 try:
     from .dmd import DMD
@@ -460,7 +461,7 @@ class SimilarityTransformDist:
             if (
                 score_method != "wasserstein"
             ):  # otherwise resort to L2 Wasserstein over singular or eigenvalues
-                print(
+                warnings.warn(
                     f"resorting to wasserstein distance over {self.wasserstein_compare}"
                 )
                 score_method = "wasserstein"
