@@ -39,6 +39,9 @@ class ControllabilitySimilarityTransformDist:
         self.align_inputs = align_inputs
         self.return_distance_components = return_distance_components
 
+        if align_inputs:
+            raise ValueError("align inputs is not yet implemented correctly, please switch to align_inputs=False for now")
+
     @staticmethod
     def compute_angular_dist(A, B):
         """
@@ -67,8 +70,6 @@ class ControllabilitySimilarityTransformDist:
             )
             if self.return_distance_components:
                 if self.score_method == "euclidean":
-                    # sims_control_joint = np.linalg.norm(C @ A_control @ C_u - B_control, "fro") ** 2
-                    # sims_state_joint = np.linalg.norm(C @ A @ C.T - B, "fro") ** 2
                     sims_control_joint = np.linalg.norm(
                         C @ A_control @ C_u - B_control, "fro"
                     )
@@ -176,6 +177,7 @@ class ControllabilitySimilarityTransformDist:
         U2, S2, V2t = np.linalg.svd(K2, full_matrices=False)
 
         C = U1 @ U2.T
+        #TODO: fix this to compute procrustes on individual blocks (B, AB, A^2B, etc)
         C_u = V2t.T @ V1t  # = V2 @ V1^T
 
         K2_aligned = C @ K2 @ C_u
