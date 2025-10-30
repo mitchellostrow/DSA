@@ -19,7 +19,7 @@ class ControllabilitySimilarityTransformDist:
         *,
         score_method: Literal["euclidean", "angular"] = "euclidean",
         compare: Literal["joint", "control", "state"] = "joint",
-        joint_optim: bool = False,
+        align_inputs: bool = False,
         return_distance_components: bool = True,
     ):
         f"""
@@ -36,7 +36,7 @@ class ControllabilitySimilarityTransformDist:
         """
         self.score_method = score_method
         self.compare = compare
-        self.joint_optim = joint_optim
+        self.align_inputs = align_inputs
         self.return_distance_components = return_distance_components
 
     @staticmethod
@@ -63,7 +63,7 @@ class ControllabilitySimilarityTransformDist:
 
         if self.compare == "joint":
             C, C_u, sims_joint_euc, sims_joint_ang = self.compare_systems_procrustes(
-                A1=A, B1=A_control, A2=B, B2=B_control, align_inputs=self.joint_optim
+                A1=A, B1=A_control, A2=B, B2=B_control, align_inputs=self.align_inputs
             )
             if self.return_distance_components:
                 if self.score_method == "euclidean":

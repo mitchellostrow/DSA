@@ -13,7 +13,7 @@ from dataclasses import dataclass, is_dataclass, asdict
 import DSA.pykoopman as pykoopman
 import pydmd
 from DSA.pykoopman.regression import DMDc, EDMDc
-from typing import Union, Mapping, Any
+from typing import Union, Mapping, Any, ClassVar, Final
 import warnings
 
 
@@ -125,6 +125,8 @@ class SimilarityTransformDistConfig:
     iters: int = 1500
     score_method: Literal["angular", "euclidean", "wasserstein"] = "angular"
     lr: float = 5e-3
+    #class variable, set as final to indicate that it's fixed and immutable
+    compare: ClassVar[Final] = "state" 
 
 @dataclass()
 class ControllabilitySimilarityTransformDistConfig:
@@ -139,19 +141,19 @@ class ControllabilitySimilarityTransformDistConfig:
             'angular' uses angular distance, 'euclidean' uses Euclidean distance.
             Default is "euclidean".
         compare (str): What to compare between systems.
-            'state' compares only state operators, 'control' compares only control operators,
-            'joint' compares both. Default is 'state'.
-        joint_optim (bool): Whether to optimize state and control operators jointly.
-            Default is False.
+            'control' compares only control operators,
+            'joint' compares both control and state operators simultaneousl. 
+            Default is 'joint'.
+            If you pass in 'state', it will throw an error -> use SimilarityTransformDistConfig Instead
+        align_inputs (bool): whether to learn a C_u transformation that aligns the input representations as well
         return_distance_components (bool): Whether to return individual distance components
             (state, control, joint) separately. Default is False.
     """
 
     score_method: Literal["euclidean", "angular"] = "euclidean"
-    compare = "joint"
-    joint_optim: bool = False
+    compare: Literal["joint","control"] = "joint"
+    align_inputs: bool = False
     return_distance_components: bool = False
-
 
 class GeneralizedDSA:
     """
@@ -586,12 +588,13 @@ class GeneralizedDSA:
         ind2 = 0 if self.method == "self-pairwise" else 1
         # 0 if self.pairwise (want to compare the set to itself)
         n_sims = (
-            1
-            if not (
+            3
+            if (
                 self.simdist_has_control
                 and self.simdist_config.get("return_distance_components")
+                and self.simdist_config.get("compare") == "joint"
             )
-            else 3
+            else 1
         )
 
         self.sims = np.zeros((len(self.dmds[0]), len(self.dmds[ind2]), n_sims))
