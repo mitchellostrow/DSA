@@ -214,11 +214,11 @@ class GeneralizedDSA:
         X_control=None,
         Y_control=None,
         dmd_class=DefaultDMD,
-        similarity_class=SimilarityTransformDist,
-        dmd_config: Union[Mapping[str, Any], dataclass] = DefaultDMDConfig(),
+        similarity_class=None,
+        dmd_config: Union[Mapping[str, Any], dataclass] = DefaultDMDConfig,
         simdist_config: Union[
             Mapping[str, Any], dataclass
-        ] = SimilarityTransformDistConfig(),
+        ] = SimilarityTransformDistConfig,
         device="cpu",
         verbose=False,
         n_jobs=1,
@@ -250,14 +250,18 @@ class GeneralizedDSA:
         dmd_class : class
             DMD class to use for decomposition. Default is DefaultDMD.
 
-        similarity_class : class
-            Similarity transform distance class to use. Default is SimilarityTransformDist.
+        similarity_class : class or None
+            Similarity transform distance class to use. If None, will be inferred
+            from the 'compare' field in simdist_config. Default is None.
 
         dmd_config : Union[Mapping[str, Any], dataclass]
             Configuration for DMD parameters. Can be a dict or dataclass.
 
         simdist_config : Union[Mapping[str, Any], dataclass]
             Configuration for similarity transform distance parameters. Can be a dict or dataclass.
+            If similarity_class is None, the 'compare' field will be used to infer the class:
+            - 'state' -> SimilarityTransformDist
+            - 'joint' or 'control' -> ControllabilitySimilarityTransformDist
 
         device : str
             Device to use for computation ('cpu' or 'cuda'). Default is 'cpu'.
@@ -291,6 +295,16 @@ class GeneralizedDSA:
 
         if is_dataclass(simdist_config):
             self.simdist_config = asdict(self.simdist_config)
+        
+        # Infer similarity_class from simdist_config if not provided
+        if similarity_class is None:
+            compare = self.simdist_config.get('compare', 'state')
+            if compare == 'state':
+                similarity_class = SimilarityTransformDist
+            elif compare in ['joint', 'control']:
+                similarity_class = ControllabilitySimilarityTransformDist
+            else:
+                raise ValueError(f"Invalid compare value in simdist_config: {compare}. Must be 'state', 'joint', or 'control'.")
 
         self.device = device
         self.n_jobs = n_jobs
@@ -429,6 +443,106 @@ class GeneralizedDSA:
             raise ValueError(
                 f"dmd_class {dmd_class.__name__} from unknown module {module_name}"
             )
+    def update_compare_method(self, compare='joint', simdist_config=None):
+        """
+        Update the similarity comparison method and adapt the configuration.
+        This method can be called to switch between different comparison modes
+        (state-only, control-only, or joint) after initialization.
+        
+        Parameters
+        ----------
+        compare : str
+            'state', 'joint', or 'control'
+        simdist_config : dict, dataclass, or None
+            Configuration to adapt. If None, uses current self.simdist_config
+        
+        Raises
+        ------
+        ValueError
+            If the comparison method is incompatible with the DMD class
+        """
+        # Validate compare parameter
+        valid_compare_values = ['state', 'joint', 'control']
+        if compare not in valid_compare_values:
+            raise ValueError(
+                f"compare must be one of {valid_compare_values}, got {compare}"
+            )
+        
+        # Use current config if none provided
+        if simdist_config is None:
+            simdist_config = self.simdist_config
+        
+        # Convert to dict if needed
+        if isinstance(simdist_config, type):  # If it's a class
+            simdist_config = simdist_config()
+        if is_dataclass(simdist_config):
+            simdist_config = asdict(simdist_config)
+        
+        # Check if return_distance_components is changing
+        old_return_components = self.simdist_config.get('return_distance_components', False)
+        new_return_components = simdist_config.get('return_distance_components', False)
+        if old_return_components != new_return_components:
+            warnings.warn(
+                f"Changing return_distance_components from {old_return_components} to "
+                f"{new_return_components} will change the output shape of score(). "
+                f"Previously computed similarities (self.sims) will be cleared. "
+                f"You will need to recompute similarities by calling score() or fit_score()."
+            )
+        
+        
+        if compare == "state":
+            simdist_class = SimilarityTransformDist
+            # Extract only parameters relevant to SimilarityTransformDist
+            adapted_config = {
+                'score_method': simdist_config.get('score_method', 'angular'),
+                'iters': simdist_config.get('iters', 1500),
+                'lr': simdist_config.get('lr', 5e-3),
+                'device': simdist_config.get('device', self.device),
+                'verbose': simdist_config.get('verbose', self.verbose),
+            }
+            # Validate score_method for SimilarityTransformDist
+            if adapted_config['score_method'] not in ['angular', 'euclidean', 'wasserstein']:
+                warnings.warn(
+                    f"score_method '{adapted_config['score_method']}' may not be valid "
+                    f"for SimilarityTransformDist, valid options: angular, euclidean, wasserstein"
+                )
+            # State comparison doesn't have return_distance_components, so always treated as False
+            new_return_components = False
+            
+        else:  # 'joint' or 'control'
+            simdist_class = ControllabilitySimilarityTransformDist
+            # Extract only parameters relevant to ControllabilitySimilarityTransformDist
+            adapted_config = {
+                'score_method': simdist_config.get('score_method', 'euclidean'),
+                'compare': compare,  # Override with the method parameter
+                'align_inputs': simdist_config.get('align_inputs', False),
+                'return_distance_components': new_return_components,
+            }
+            # Validate score_method for ControllabilitySimilarityTransformDist
+            if adapted_config['score_method'] not in ['angular', 'euclidean']:
+                warnings.warn(
+                    f"score_method '{adapted_config['score_method']}' may not be valid "
+                    f"for ControllabilitySimilarityTransformDist, valid options: angular, euclidean"
+                )
+        
+        # Check compatibility between DMD and new simdist class
+        # This will update self.dmd_has_control and self.simdist_has_control
+        self._check_dmd_simdist_compatibility(self.dmd_class, simdist_class)
+        
+        if self.simdist_has_control:
+            if self.X_control is None and self.Y_control is None:
+                raise ValueError(
+                    f"Cannot use compare='{compare}' which requires control matrices, "
+                    f"but no control data (X_control or Y_control) was provided"
+                )
+        
+        self.simdist_config = adapted_config
+        self.simdist = simdist_class(**adapted_config)
+        
+        if self.verbose:
+            print(f"Updated similarity method to compare='{compare}' using {simdist_class.__name__}")
+        
+        return simdist_class, adapted_config
 
     def fit_dmds(self):
         if self.n_jobs != 1:
@@ -742,45 +856,28 @@ class InputDSA(GeneralizedDSA):
         Y=None,
         Y_control=None,
         dmd_class=SubspaceDMDc,
-        dmd_config: Union[Mapping[str, Any], dataclass] = SubspaceDMDcConfig(),
+        dmd_config: Union[Mapping[str, Any], dataclass] = SubspaceDMDcConfig,
         simdist_config: Union[
             Mapping[str, Any], dataclass
-        ] = ControllabilitySimilarityTransformDistConfig(),
+        ] = ControllabilitySimilarityTransformDistConfig,
         device="cpu",
         verbose=False,
         n_jobs=1,
     ):
-        #TODO: fix based on making compare argument explicit
-        # check if simdist_config has 'compare', and if it's 'state', use the standard SimilarityTransformDist,
-        # otherwise use ControllabilitySimilarityTransformDistConfig
-        if isinstance(simdist_config, dict):
-            compare = simdist_config.get("compare", None)
-        else:
-            compare = simdist_config.compare
-        simdist = self.update_compare_method(compare)
-
+        # similarity_class will be inferred from simdist_config in parent __init__
         super().__init__(
             X,
             Y,
             X_control,
             Y_control,
             dmd_class,
-            simdist,
-            dmd_config,
-            simdist_config,
-            device,
-            verbose,
-            n_jobs,
+            similarity_class=None,  # Will be inferred from simdist_config
+            dmd_config=dmd_config,
+            simdist_config=simdist_config,
+            device=device,
+            verbose=verbose,
+            n_jobs=n_jobs,
         )
-
-        assert X_control is not None
-        assert self.dmd_has_control
-
-    def update_compare_method(self,compare='joint'):
-        if compare == "state":
-            simdist = SimilarityTransformDist
-            #TODO: check simdist config to make sure it aligns
-        else:
-            simdist = ControllabilitySimilarityTransformDist
-            #TODO: check simdist config to make sure it aligns
-        return simdist
+        
+        assert X_control is not None, "InputDSA requires X_control to be provided"
+        assert self.dmd_has_control, "InputDSA requires a DMD class with control"

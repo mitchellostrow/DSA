@@ -161,7 +161,6 @@ class ControllabilitySimilarityTransformDist:
         # Build controllability matrices: K \in R^{n x p}
         K1 = self.get_controllability_matrix(A1, B1)
         K2 = self.get_controllability_matrix(A2, B2)
-        import pdb; pdb.set_trace()
         if not align_inputs:
             # One-sided: C = argmin ||K1 - C K2||_F
             M = K2 @ K1.T
