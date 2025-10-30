@@ -123,8 +123,8 @@ class DMDcConfig:
             Default is 1 (consecutive time steps).
     """
     n_delays: int = 1
-    input_rank: int = None
-    output_rank: int = None
+    rank_input: int = None
+    rank_output: int = None
     lamb: float = 0
     delay_interval: int = 1
 
@@ -283,7 +283,11 @@ class GeneralizedDSA:
         self.Y = Y
         self.X_control = X_control
         self.Y_control = Y_control
+
+        if isinstance(simdist_config, type): #if it's the class itself (not an object) initialize
+            simdist_config = simdist_config()
         self.simdist_config = simdist_config
+
 
         if is_dataclass(simdist_config):
             self.simdist_config = asdict(self.simdist_config)
@@ -311,6 +315,8 @@ class GeneralizedDSA:
         # Process DMD keyword arguments from **dmd_kwargs
         # These are parameters like n_delays, rank, etc., that are specific to DMDs
         # and need to be broadcasted according to X and Y data structure.
+        if isinstance(dmd_config,type):
+            dmd_config = dmd_config()
         if is_dataclass(dmd_config):
             dmd_config = asdict(dmd_config)
         self.dmd_config = (

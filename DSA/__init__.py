@@ -1,6 +1,6 @@
 from DSA.dsa import DSA, ControllabilitySimilarityTransformDistConfig, GeneralizedDSA, InputDSA, SimilarityTransformDistConfig
 from DSA.dsa import DefaultDMDConfig as DMDConfig
-from DSA.dsa import pyKoopmanDMDConfig,SubspaceDMDcConfig
+from DSA.dsa import pyKoopmanDMDConfig,SubspaceDMDcConfig, DMDcConfig
 from DSA.dsa import SimilarityTransformDistConfig, ControllabilitySimilarityTransformDistConfig
 from DSA.dmd import DMD
 from DSA.dmdc import DMDc

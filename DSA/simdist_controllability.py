@@ -1,6 +1,7 @@
 from typing import Literal
 import numpy as np
 from scipy.linalg import orthogonal_procrustes
+import torch 
 
 try:
     from .simdist import SimilarityTransformDist
@@ -63,6 +64,11 @@ class ControllabilitySimilarityTransformDist:
         return cos_sim
 
     def fit_score(self, A, B, A_control, B_control):
+        convert_np = lambda A: A.detach().cpu().numpy() if isinstance(A,torch.Tensor) else A
+        A = convert_np(A)
+        B = convert_np(B)
+        A_control = convert_np(A_control)
+        B_control = convert_np(B_control)
 
         if self.compare == "joint":
             C, C_u, sims_joint_euc, sims_joint_ang = self.compare_systems_procrustes(
@@ -123,7 +129,6 @@ class ControllabilitySimilarityTransformDist:
             # term_norm = np.linalg.norm(current_term)
             # if term_norm < 1e-12 or term_norm > 1e12:
             # break
-
             # Check for linear dependence (rank deficiency)
             K_test = np.hstack((K, current1_term, current2_term))
             # if np.linalg.matrix_rank(K_test) <= np.linalg.matrix_rank(K):
@@ -156,7 +161,7 @@ class ControllabilitySimilarityTransformDist:
         # Build controllability matrices: K \in R^{n x p}
         K1 = self.get_controllability_matrix(A1, B1)
         K2 = self.get_controllability_matrix(A2, B2)
-
+        import pdb; pdb.set_trace()
         if not align_inputs:
             # One-sided: C = argmin ||K1 - C K2||_F
             M = K2 @ K1.T
