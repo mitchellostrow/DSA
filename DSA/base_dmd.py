@@ -237,6 +237,22 @@ class BaseDMD(ABC):
 
         return computed_rank
 
+    def _to_torch(self, x):
+        """Convert numpy array to torch tensor on the appropriate device."""
+        if not self.use_torch or x is None:
+            return x
+        if isinstance(x, torch.Tensor):
+            return x.to(self.device)
+        return torch.from_numpy(x).to(self.device)
+    
+    def _to_numpy(self, x):
+        """Convert torch tensor to numpy array."""
+        if not self.use_torch or x is None:
+            return x
+        if isinstance(x, torch.Tensor):
+            return x.cpu().numpy()
+        return x
+        
     def all_to_device(self, device="cpu"):
         """Move all tensor attributes to specified device."""
         for k, v in self.__dict__.items():

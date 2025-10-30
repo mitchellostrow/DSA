@@ -311,6 +311,7 @@ class DMDc(BaseDMD):
                 else:
                     H_list.append(h_elem)
 
+            self.Hu_shapes = [h.shape for h in self.Hu]
             for hu_elem in self.Hu:
                 if hu_elem.ndim == 3:
                     Hu_list.append(
@@ -352,18 +353,18 @@ class DMDc(BaseDMD):
             self.Sh
         )
 
-        self.Vht_minus, self.Vht_plus = self.get_plus_minus(self.Vh, self.H)
-        self.Vut_minus, _ = self.get_plus_minus(self.Vu, self.Hu)
+        self.Vht_minus, self.Vht_plus = self.get_plus_minus(self.Vh, self.H,self.H_shapes)
+        self.Vut_minus, _ = self.get_plus_minus(self.Vu, self.Hu,self.Hu_shapes)
 
         if self.verbose:
             print("SVDs computed!")
 
-    def get_plus_minus(self, V, H):
+    def get_plus_minus(self, V, H,H_shapes):
         if self.ntrials > 1:
             if self.is_list_data:
                 V_split = torch.split(V, self.H_row_counts, dim=0)
                 Vt_minus_list, Vt_plus_list = [], []
-                for v_part, h_shape in zip(V_split, self.H_shapes):
+                for v_part, h_shape in zip(V_split, H_shapes):
                     if len(h_shape) == 3:  # Has trials
                         v_part_reshaped = v_part.reshape(h_shape)
                         newshape = (
