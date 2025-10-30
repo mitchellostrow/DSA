@@ -174,8 +174,9 @@ class DMDc(BaseDMD):
                 control_data
             )
         else:
-            self.control_data = torch.zeros_like(self.data)
-            control_is_ragged = False
+            raise ValueError("control data should be present, otherwise use DMD")
+            # self.control_data = torch.zeros_like(self.data)
+            # control_is_ragged = False
 
         # Check consistency between data and control_data
         if data_is_ragged != control_is_ragged:

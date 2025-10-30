@@ -13,13 +13,11 @@ class SubspaceDMDc(BaseDMD):
             data,
             control_data=None,
             n_delays=1,
-            f=None,
             rank=None,
             lamb=1e-8,
             device='cpu',
             verbose=False,
             send_to_cpu=False,
-            time_first=True,
             backend='n4sid',
     ):
         """
@@ -33,8 +31,6 @@ class SubspaceDMDc(BaseDMD):
             Control input data
         n_delays : int
             Number of time delays (past window)
-        f : int, optional
-            Future window length (defaults to n_delays)
         rank : int, optional
             Rank for system identification
         lamb : float
@@ -47,8 +43,6 @@ class SubspaceDMDc(BaseDMD):
             If True, print progress information
         send_to_cpu : bool
             If True, move results to CPU after fitting (useful for batch GPU processing)
-        time_first : bool
-            If True, data shape is (time, features); otherwise (features, time)
         backend : str
             'n4sid' or 'custom' for subspace identification algorithm
         """
@@ -66,9 +60,7 @@ class SubspaceDMDc(BaseDMD):
         self.C_v = None
         self.info = None
         self.n_delays = n_delays
-        self.f = f if f is not None else n_delays  # Future window, defaults to n_delays
         self.rank = rank
-        self.time_first = time_first
         self.backend = backend
 
 
@@ -94,7 +86,7 @@ class SubspaceDMDc(BaseDMD):
                                                             y=self.data,
                                                             u=self.control_data,
                                                             p=self.n_delays,
-                                                            f=self.f,
+                                                            f=self.n_delays,
                                                             n=self.rank, 
                                                             backend=self.backend,
                                                             lamb=self.lamb)
@@ -541,13 +533,8 @@ class SubspaceDMDc(BaseDMD):
         - u: either (n_trials, m, N) array, (m, N) array, or list of (m, N_i) arrays
         """
         if isinstance(y, list) and isinstance(u, list):
-            # If time_first=True, transpose each trial from (time_points, variables) to (variables, time_points)
-            if self.time_first:
-                y_list = [y_trial.T for y_trial in y]
-                u_list = [u_trial.T for u_trial in u]
-            else:
-                y_list = y
-                u_list = u
+            y_list = [y_trial.T for y_trial in y]
+            u_list = [u_trial.T for u_trial in u]
             if backend == 'n4sid':
                 return self.subspace_dmdc_multitrial_QR_decomposition(y_list, u_list, p, f, n, lamb, energy)
             else:
@@ -563,10 +550,8 @@ class SubspaceDMDc(BaseDMD):
                 y_list = [y[i] for i in range(y.shape[0])]
                 u_list = [u[i] for i in range(u.shape[0])]
             
-            # If time_first=True, transpose each trial from (time_points, variables) to (variables, time_points)
-            if self.time_first:
-                y_list = [y_trial.T for y_trial in y_list]
-                u_list = [u_trial.T for u_trial in u_list]
+            y_list = [y_trial.T for y_trial in y_list]
+            u_list = [u_trial.T for u_trial in u_list]
             
             if backend == 'n4sid':
                return self.subspace_dmdc_multitrial_QR_decomposition(y_list, u_list, p, f, n, lamb, energy)
@@ -581,9 +566,6 @@ class SubspaceDMDc(BaseDMD):
 
         # Handle list of 2D arrays
         if isinstance(Y, list):
-            if not self.time_first:
-                Y = [y.T for y in Y]
-                U = [u.T for u in U]
             
             self.kalman = OnlineKalman(self)
             Y_pred = []
@@ -599,14 +581,6 @@ class SubspaceDMDc(BaseDMD):
                 Y_pred.append(np.concatenate(trial_predictions, axis=1).T)
             return Y_pred  # Return as list to match input format
 
-        # print("time_first", self.time_first)
-        if not self.time_first:
-            if Y.ndim == 2:
-                Y = Y.T
-                U = U.T
-            else:
-                Y = Y.transpose(0, 2, 1)
-                U = U.transpose(0, 2, 1)
             
         self.kalman = OnlineKalman(self)
         if Y.ndim == 2:
