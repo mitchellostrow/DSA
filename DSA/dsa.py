@@ -102,6 +102,32 @@ class SubspaceDMDcConfig:
     lamb: float = 0
     backend: str = "n4sid"
 
+@dataclass()
+class DMDcConfig:
+    """
+    Configuration dataclass for DefaultDMDc (standard DMD with control).
+
+    This configuration is used to set parameters for the DefaultDMDc class when
+    performing Dynamical Mode Decomposition on time series data with control inputs.
+
+    Attributes:
+        n_delays (int): Number of time delays to use in the Hankel matrix construction
+            for the state data. Default is 1 (no delays).
+        input_rank (int): Rank for SVD truncation of the input (control) data.
+            If None, no truncation is performed. Default is None.
+        output_rank (int): Rank for SVD truncation of the output (state) data.
+            If None, no truncation is performed. Default is None.
+        lamb (float): Regularization parameter for ridge regression.
+            Default is 0 (no regularization).
+        delay_interval (int): Interval between delays in the Hankel matrix.
+            Default is 1 (consecutive time steps).
+    """
+    n_delays: int = 1
+    input_rank: int = None
+    output_rank: int = None
+    lamb: float = 0
+    delay_interval: int = 1
+
 
 # __Example config dataclasses for similarity transform distance #
 @dataclass
@@ -752,4 +778,3 @@ class InputDSA(GeneralizedDSA):
             simdist = ControllabilitySimilarityTransformDist
             #TODO: check simdist config to make sure it aligns
         return simdist
-
