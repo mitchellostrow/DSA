@@ -120,15 +120,11 @@ class SimilarityTransformDistConfig:
             Default is "angular".
         lr (float): Learning rate for the optimization algorithm.
             Default is 5e-3.
-        zero_pad (bool): Whether to zero-pad matrices to make them the same size.
-            Default is False.
     """
 
     iters: int = 1500
     score_method: Literal["angular", "euclidean", "wasserstein"] = "angular"
     lr: float = 5e-3
-    zero_pad: bool = False
-
 
 @dataclass()
 class ControllabilitySimilarityTransformDistConfig:
@@ -152,7 +148,7 @@ class ControllabilitySimilarityTransformDistConfig:
     """
 
     score_method: Literal["euclidean", "angular"] = "euclidean"
-    compare = "state"
+    compare = "joint"
     joint_optim: bool = False
     return_distance_components: bool = False
 
@@ -600,8 +596,6 @@ class GeneralizedDSA:
 
         self.sims = np.zeros((len(self.dmds[0]), len(self.dmds[ind2]), n_sims))
 
-        if self.verbose:
-            print("comparing dmds")
 
         def compute_similarity(i, j):
             if self.method == "self-pairwise" and j >= i:
@@ -614,7 +608,8 @@ class GeneralizedDSA:
                 self.get_dmd_matrix(self.dmds[0][i]),
                 self.get_dmd_matrix(self.dmds[ind2][j]),
             ]
-            if self.dmd_has_control:
+
+            if self.simdist_has_control and self.dmd_has_control:
                 simdist_args.extend(
                     [
                         self.get_dmd_control_matrix(self.dmds[0][i]),
@@ -719,7 +714,6 @@ class InputDSA(GeneralizedDSA):
         device="cpu",
         verbose=False,
         n_jobs=1,
-        compare = 'joint'
     ):
         #TODO: fix based on making compare argument explicit
         # check if simdist_config has 'compare', and if it's 'state', use the standard SimilarityTransformDist,
@@ -750,7 +744,9 @@ class InputDSA(GeneralizedDSA):
     def update_compare_method(self,compare='joint'):
         if compare == "state":
             simdist = SimilarityTransformDist
+            #TODO: check simdist config to make sure it aligns
         else:
             simdist = ControllabilitySimilarityTransformDist
+            #TODO: check simdist config to make sure it aligns
         return simdist
 

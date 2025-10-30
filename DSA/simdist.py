@@ -462,7 +462,7 @@ class SimilarityTransformDist:
                 score_method != "wasserstein"
             ):  # otherwise resort to L2 Wasserstein over singular or eigenvalues
                 warnings.warn(
-                    f"resorting to wasserstein distance over {self.wasserstein_compare}"
+                    f"shapes are not aligned, resorting to wasserstein distance over {self.wasserstein_compare}"
                 )
                 score_method = "wasserstein"
             else:
