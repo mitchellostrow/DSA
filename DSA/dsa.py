@@ -98,7 +98,6 @@ class SubspaceDMDcConfig:
     """
 
     n_delays: int = 1
-    delay_interval: int = 1
     rank: int = None
     lamb: float = 0
     backend: str = "n4sid"
@@ -192,10 +191,10 @@ class GeneralizedDSA:
         Y_control=None,
         dmd_class=DefaultDMD,
         similarity_class=SimilarityTransformDist,
-        dmd_config: Union[Mapping[str, Any], dataclass] = DefaultDMDConfig,
+        dmd_config: Union[Mapping[str, Any], dataclass] = DefaultDMDConfig(),
         simdist_config: Union[
             Mapping[str, Any], dataclass
-        ] = SimilarityTransformDistConfig,
+        ] = SimilarityTransformDistConfig(),
         device="cpu",
         verbose=False,
         n_jobs=1,
@@ -512,7 +511,7 @@ class GeneralizedDSA:
                         assert len(param[i]) >= len(data)
                         out.append(param[i][: len(data)])
         elif (
-            isinstance(param, (int, float, np.integer))
+            isinstance(param, (int, float, np.integer,str))
             or param in {None, "None", "none"}
             or (
                 hasattr(param, "__module__")
@@ -713,10 +712,10 @@ class InputDSA(GeneralizedDSA):
         Y=None,
         Y_control=None,
         dmd_class=SubspaceDMDc,
-        dmd_config: Union[Mapping[str, Any], dataclass] = SubspaceDMDcConfig,
+        dmd_config: Union[Mapping[str, Any], dataclass] = SubspaceDMDcConfig(),
         simdist_config: Union[
             Mapping[str, Any], dataclass
-        ] = ControllabilitySimilarityTransformDistConfig,
+        ] = ControllabilitySimilarityTransformDistConfig(),
         device="cpu",
         verbose=False,
         n_jobs=1,
@@ -725,14 +724,10 @@ class InputDSA(GeneralizedDSA):
         #TODO: fix based on making compare argument explicit
         # check if simdist_config has 'compare', and if it's 'state', use the standard SimilarityTransformDist,
         # otherwise use ControllabilitySimilarityTransformDistConfig
-        if isinstance(simdist_config, dataclass):
-            compare = simdist_config.compare
-        elif isinstance(simdist_config, dict):
+        if isinstance(simdist_config, dict):
             compare = simdist_config.get("compare", None)
         else:
-            raise ValueError(
-                "unknown data type for simdist-config, use dataclass or dict"
-            )
+            compare = simdist_config.compare
         simdist = self.update_compare_method(compare)
 
         super().__init__(

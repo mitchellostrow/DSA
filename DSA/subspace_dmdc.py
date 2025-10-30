@@ -55,6 +55,8 @@ class SubspaceDMDc(BaseDMD):
         # SubspaceDMDc specific attributes
         self.data = data
         self.control_data = control_data
+        if self.control_data is None:
+            raise ValueError("no control data detected, use DMD or SubspaceDMD instead")
         self.A_v = None
         self.B_v = None
         self.C_v = None
@@ -165,7 +167,7 @@ class SubspaceDMDc(BaseDMD):
             Y_f_all.append(Y_f_trial)
         
         if not valid_trials:
-            raise ValueError("No trials have sufficient data for given (p,f)")
+            raise ValueError("No trials have sufficient data for given number of delays")
         
         # Concatenate across valid trials
         U_p = np.concatenate(U_p_all, axis=1)  # (p m, T_total)
@@ -533,12 +535,10 @@ class SubspaceDMDc(BaseDMD):
         - u: either (n_trials, m, N) array, (m, N) array, or list of (m, N_i) arrays
         """
         if isinstance(y, list) and isinstance(u, list):
-            y_list = [y_trial.T for y_trial in y]
-            u_list = [u_trial.T for u_trial in u]
             if backend == 'n4sid':
-                return self.subspace_dmdc_multitrial_QR_decomposition(y_list, u_list, p, f, n, lamb, energy)
+                return self.subspace_dmdc_multitrial_QR_decomposition(y, u, p, f, n, lamb, energy)
             else:
-                return self.subspace_dmdc_multitrial_custom(y_list, u_list, p, f, n, lamb, energy)
+                return self.subspace_dmdc_multitrial_custom(y, u, p, f, n, lamb, energy)
         
         else:
             # Handle 2D arrays (single trial) by converting to list format

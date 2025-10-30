@@ -115,6 +115,7 @@ class DMDc(BaseDMD):
         self.device, self.use_torch = self._setup_device(device, use_torch=True)
 
         self._init_data(data, control_data)
+        self._check_same_shape()
 
         self.n_delays = n_delays
         self.n_control_delays = n_control_delays
@@ -213,6 +214,16 @@ class DMDc(BaseDMD):
                 self.n = self.data.shape[1]
                 self.ntrials = 1
             self.is_list_data = False
+
+    def _check_same_shape(self):
+        if isinstance(self.data,(np.ndarray,torch.Tensor)):
+            assert self.data.shape[:-1] == self.control_data.shape[:-1]
+        elif isinstance(self.data,list):
+
+            assert len(self.data) == len(self.control_data)
+
+            for d,c in zip(self.data,self.control_data):
+                assert d.shape[:-1] == c.shape[:-1]
 
     def compute_hankel(
         self,
