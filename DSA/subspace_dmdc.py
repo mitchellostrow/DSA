@@ -1,5 +1,6 @@
 """This module computes the subspace DMD with control (DMDc) model for a given dataset."""
 import numpy as np
+import warnings
 import torch
 from .base_dmd import BaseDMD
 
@@ -109,10 +110,9 @@ class SubspaceDMDc(BaseDMD):
         
         for trial_idx, (Y_trial, U_trial) in enumerate(zip(y_list, u_list)):
             N_trial = Y_trial.shape[1]
-            T_trial = N_trial - (p + f) + 1
+            T_trial = N_trial - (p + f)
             
             if T_trial <= 0:
-                print(f"Warning: Trial {trial_idx} has insufficient data (T={T_trial}), skipping")
                 continue
 
             valid_trials.append(trial_idx)
@@ -130,7 +130,13 @@ class SubspaceDMDc(BaseDMD):
             Y_f_all.append(Y_f_trial)
         
         if not valid_trials:
-            raise ValueError("No trials have sufficient data for given number of delays")
+            raise ValueError("No trials have sufficient time points for given number of delays")
+        elif len(valid_trials) < len(y_list) // 2:
+            warnings.warn(
+                f"Only {len(valid_trials)} out of {len(y_list)} trials have sufficient time points "
+                f"relative to the number of delays. This may affect model quality. Consider reducing the number of delays.")
+        else:
+            print(f"Using {len(valid_trials)} out of {len(y_list)} trials with sufficient time points.")
         
         U_p = np.concatenate(U_p_all, axis=1)
         Y_p = np.concatenate(Y_p_all, axis=1)
@@ -155,14 +161,28 @@ class SubspaceDMDc(BaseDMD):
         dim_zp = p * (m + p_out)
 
         def calculate_projection_and_svd(H, Z_p):
-            Q, R_upper = np.linalg.qr(H.T, mode='reduced')
-            L = R_upper.T
+            # Check if inputs are torch tensors
+            is_torch = isinstance(H, torch.Tensor) or isinstance(Z_p, torch.Tensor)
             
-            R22 = L[dim_uf:dim_uf + dim_zp, dim_uf:dim_uf + dim_zp]
-            R32 = L[dim_uf + dim_zp:, dim_uf:dim_uf + dim_zp]
+            if is_torch:
+                Q, R_upper = torch.linalg.qr(H.T)
+                L = R_upper.T
+                
+                R22 = L[dim_uf:dim_uf + dim_zp, dim_uf:dim_uf + dim_zp]
+                R32 = L[dim_uf + dim_zp:, dim_uf:dim_uf + dim_zp]
+                
+                O = R32 @ torch.linalg.pinv(R22) @ Z_p
+                Uo, s, Vt = torch.linalg.svd(O, full_matrices=False)
+            else:
+                Q, R_upper = np.linalg.qr(H.T, mode='reduced')
+                L = R_upper.T
+                
+                R22 = L[dim_uf:dim_uf + dim_zp, dim_uf:dim_uf + dim_zp]
+                R32 = L[dim_uf + dim_zp:, dim_uf:dim_uf + dim_zp]
+                
+                O = R32 @ np.linalg.pinv(R22) @ Z_p
+                Uo, s, Vt = np.linalg.svd(O, full_matrices=False)
             
-            O = R32 @ np.linalg.pinv(R22) @ Z_p
-            Uo, s, Vt = np.linalg.svd(O, full_matrices=False)
             return Uo, s, Vt
 
         if self.use_torch and H.shape[1] > 100:
@@ -188,13 +208,13 @@ class SubspaceDMDc(BaseDMD):
         Gamma_hat = U_n @ S_half
         X_hat = S_half @ V_n
 
-        X, X_next, U_mid = self._time_align_valid_trials(X_hat, u_list, valid_trials, T_per_trial, p)
+        X, X_next, U_mid, Y_curr = self._time_align_valid_trials(X_hat, u_list, y_list, valid_trials, T_per_trial, p)
 
 
         A_hat, B_hat = self._perform_ridge_regression(X, X_next, U_mid, n, lamb)
 
         C_hat = Gamma_hat[:p_out, :]
-        noise_covariance, R_hat, Q_hat, S_hat = self._estimate_noise_covariance(X_next, A_hat, X, B_hat, U_mid)
+        noise_covariance, R_hat, Q_hat, S_hat = self._estimate_noise_covariance(X_next, A_hat, X, B_hat, U_mid, Y_curr, C_hat)
 
         info = {
             "singular_values_O": s, 
@@ -215,13 +235,14 @@ class SubspaceDMDc(BaseDMD):
         
         return A_hat, B_hat, C_hat, info
 
-    def _time_align_valid_trials(self, X_hat, u_list, valid_trials, T_per_trial, p):
+    def _time_align_valid_trials(self, X_hat, u_list, y_list, valid_trials, T_per_trial, p):
         """Helper function to time-align trials for regression."""
         # import pdb; pdb.set_trace()
         X_segments = []
         X_next_segments = []
         U_mid_segments = []
-        
+        Y_segments = []
+
         start_idx = 0
         for trial_idx, T_trial in enumerate(T_per_trial):
             X_trial = X_hat[:, start_idx:start_idx + T_trial]
@@ -235,14 +256,19 @@ class SubspaceDMDc(BaseDMD):
             X_segments.append(X_trial_curr)
             X_next_segments.append(X_trial_next)
             U_mid_segments.append(U_mid_trial)
-            
+
+            Y_trial = y_list[original_trial_idx]
+            Y_trial_curr = Y_trial[:, p:p+T_trial-1]
+            Y_segments.append(Y_trial_curr)
+                        
             start_idx += T_trial
         
         X = np.concatenate(X_segments, axis=1)
         X_next = np.concatenate(X_next_segments, axis=1)
         U_mid = np.concatenate(U_mid_segments, axis=1)
-        
-        return X, X_next, U_mid
+        Y_curr = np.concatenate(Y_segments, axis=1)
+
+        return X, X_next, U_mid, Y_curr
 
     def _perform_ridge_regression(self, X, X_next, U_mid, n, lamb):
         """Helper function to perform ridge regression."""
@@ -265,10 +291,10 @@ class SubspaceDMDc(BaseDMD):
 
         return A_hat, B_hat
 
-    def _estimate_noise_covariance(self, X_next, A_hat, X, B_hat, U_mid):
+    def _estimate_noise_covariance(self, X_next, A_hat, X, B_hat, U_mid, Y_curr, C_hat):
         """Helper function to estimate the noise covariance matrix."""
         W_hat = X_next - (A_hat @ X + B_hat @ U_mid)
-        V_hat = self.Y_curr - (self.C_hat @ X)
+        V_hat = Y_curr - (C_hat @ X)
 
         V_hat = V_hat - V_hat.mean(axis=1, keepdims=True)
         W_hat = W_hat - W_hat.mean(axis=1, keepdims=True)
@@ -317,7 +343,7 @@ class SubspaceDMDc(BaseDMD):
         Gamma_hat = U_n @ S_half
         X_hat = S_half @ V_n
 
-        X, X_next, U_mid = self._time_align_valid_trials(X_hat, u_list, valid_trials, T_per_trial, p)
+        X, X_next, U_mid, Y_curr = self._time_align_valid_trials(X_hat, u_list, y_list, valid_trials, T_per_trial, p)
         if any([i == 0 for i in X.shape]):
             raise ValueError ("too many delays for dataset, reduce number")
         A_hat, B_hat = self._perform_ridge_regression(X, X_next, U_mid, n, lamb)
@@ -373,39 +399,45 @@ class SubspaceDMDc(BaseDMD):
                 return self.subspace_dmdc_multitrial_custom(y_list, u_list, p, f, n, lamb, energy)
 
 
-    def predict(self, Y, U, reseed=None):
+    def predict(self, test_data=None, control_data=None, reseed=None):
         """Predict using the Kalman filter."""
+        if test_data is None:
+            test_data = self.data
+        if control_data is None:
+            control_data = self.control_data
+
         if reseed is None:
             reseed = 1
 
-        if isinstance(Y, list):
+        if isinstance(test_data, list):
             self.kalman = OnlineKalman(self)
             Y_pred = []
-            for trial in range(len(Y)):
+            for trial in range(len(test_data)):
                 self.kalman.reset()
                 trial_predictions = [
-                    self.kalman.step(y=Y[trial][t] if t % reseed == 0 else None, u=U[trial][t])[0]
-                    for t in range(Y[trial].shape[0])
+                    self.kalman.step(y=test_data[trial][t] if t % reseed == 0 else None, u=control_data[trial][t])[0]
+                    for t in range(test_data[trial].shape[0])
                 ]
                 Y_pred.append(np.concatenate(trial_predictions, axis=1).T)
             return Y_pred
 
         self.kalman = OnlineKalman(self)
-        if Y.ndim == 2:
+        if test_data.ndim == 2:
             return np.concatenate(
-                [self.kalman.step(y=Y[t] if t % reseed == 0 else None, u=U[t])[0] for t in range(Y.shape[0])],
+                [self.kalman.step(y=test_data[t] if t % reseed == 0 else None, u=control_data[t])[0] for t in range(test_data.shape[0])],
                 axis=1
             ).T
         else:
             Y_pred = []
-            for trial in range(Y.shape[0]):
+            for trial in range(test_data.shape[0]):
                 self.kalman.reset()
                 trial_predictions = [
-                    self.kalman.step(y=Y[trial, t] if t % reseed == 0 else None, u=U[trial, t])[0]
-                    for t in range(Y.shape[1])
+                    self.kalman.step(y=test_data[trial, t] if t % reseed == 0 else None, u=control_data[trial, t])[0]
+                    for t in range(test_data.shape[1])
                 ]
                 Y_pred.append(np.concatenate(trial_predictions, axis=1).T)
             return np.array(Y_pred)
+ 
  
     def compute_hankel(self, *args, **kwargs):
         """Compute Hankel matrices for SubspaceDMDc."""
@@ -435,6 +467,7 @@ class OnlineKalman:
         self.Q = dmdc.info['Q_hat']
         
         self.y_dim, self.x_dim = self.C.shape
+        self.u_dim = self.B.shape[1]
         
         self.reset()
 
