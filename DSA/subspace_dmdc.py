@@ -50,6 +50,9 @@ class SubspaceDMDc(BaseDMD):
         # Initialize base class
         super().__init__(device=device, verbose=verbose, send_to_cpu=send_to_cpu, lamb=lamb)
         
+        self._init_data(data, control_data)
+        self._check_same_shape()
+
         # Smart device setup with graceful fallback
         self.device, self.use_torch = self._setup_device(device, True)
         
@@ -81,22 +84,72 @@ class SubspaceDMDc(BaseDMD):
         if self.send_to_cpu:
             self.all_to_device(device='cpu')
 
-    def _validate_and_collect_data(self, y_list, u_list, p, f):
+
+    def _init_data(self, data, control_data=None):
+        # Process main data
+        self.data, data_is_ragged = self._process_single_dataset(data)
+
+        # Process control data
+        if control_data is not None:
+            self.control_data, control_is_ragged = self._process_single_dataset(
+                control_data
+            )
+        else:
+            raise ValueError("control data should be present, otherwise use DMD")
+            # self.control_data = torch.zeros_like(self.data)
+            # control_is_ragged = False
+
+        # Check consistency between data and control_data
+        if data_is_ragged != control_is_ragged:
+            raise ValueError(
+                "Data and control data have different structure (type or dimensionality)."
+            )
+
+        if data_is_ragged:
+            # Additional validation for ragged data
+            if not all(d.shape[-1] == control_data[0].shape[-1] for d in control_data):
+                raise ValueError(
+                    "All control tensors in the list must have the same number of features (last dimension)."
+                )
+            if not all(
+                d.shape[0] == control_d.shape[0]
+                for d, control_d in zip(data, control_data)
+            ):
+                raise ValueError(
+                    "Data and control_data tensors must have the same number of time steps."
+                )
+
+            # Set attributes for ragged data
+            n_features = self.data[0].shape[-1]
+            self.n = n_features
+            self.ntrials = sum(d.shape[0] if d.ndim == 3 else 1 for d in self.data)
+            self.trial_counts = [d.shape[0] if d.ndim == 3 else 1 for d in self.data]
+            self.is_list_data = True
+        else:
+            # Set attributes for non-ragged data
+            if self.data.ndim == 3:
+                self.ntrials = self.data.shape[0]
+                self.n = self.data.shape[2]
+            else:
+                self.n = self.data.shape[1]
+                self.ntrials = 1
+            self.is_list_data = False
+            
+
+    def _check_same_shape(self):
+        if isinstance(self.data,(np.ndarray,torch.Tensor)):
+            assert self.data.shape[:-1] == self.control_data.shape[:-1]
+        elif isinstance(self.data,list):
+            assert len(self.data) == len(self.control_data)
+
+            for d,c in zip(self.data,self.control_data):
+                assert d.shape[:-1] == c.shape[:-1]
+
+
+    def _collect_data(self, y_list, u_list, p, f):
         """Helper function to validate dimensions and collect data from trials."""
-        if len(y_list) != len(u_list):
-            raise ValueError("y_list and u_list must have same number of trials")
-        # import pdb; pdb.set_trace()
-        n_trials = len(y_list)
         p_out = y_list[0].shape[0]
         m = u_list[0].shape[0]
-        
-        for i, (y_trial, u_trial) in enumerate(zip(y_list, u_list)):
-            if y_trial.shape[0] != p_out:
-                raise ValueError(f"Trial {i}: y has {y_trial.shape[0]} outputs, expected {p_out}")
-            if u_trial.shape[0] != m:
-                raise ValueError(f"Trial {i}: u has {u_trial.shape[0]} inputs, expected {m}")
-            if y_trial.shape[1] != u_trial.shape[1]:
-                raise ValueError(f"Trial {i}: y and u have different time lengths")
         
         U_p_all = []
         Y_p_all = []
@@ -136,7 +189,8 @@ class SubspaceDMDc(BaseDMD):
                 f"Only {len(valid_trials)} out of {len(y_list)} trials have sufficient time points "
                 f"relative to the number of delays. This may affect model quality. Consider reducing the number of delays.")
         else:
-            print(f"Using {len(valid_trials)} out of {len(y_list)} trials with sufficient time points.")
+            # print(f"Using {len(valid_trials)} out of {len(y_list)} trials with sufficient time points.")
+            pass
         
         U_p = np.concatenate(U_p_all, axis=1)
         Y_p = np.concatenate(Y_p_all, axis=1)
@@ -153,7 +207,7 @@ class SubspaceDMDc(BaseDMD):
         Subspace-DMDc for multi-trial data with variable trial lengths using QR decomposition.
         """
         U_p, Y_p, U_f, Y_f, Z_p, valid_trials, T_per_trial, T_total, p_out, m = \
-            self._validate_and_collect_data(y_list, u_list, p, f)
+            self._collect_data(y_list, u_list, p, f)
 
         H = np.vstack([U_f, Z_p, Y_f])
         
@@ -230,7 +284,8 @@ class SubspaceDMDc(BaseDMD):
             "noise_covariance": noise_covariance,
             'R_hat': R_hat,
             'Q_hat': Q_hat,
-            'S_hat': S_hat
+            'S_hat': S_hat,
+            'X_hat': X_hat
         }
         
         return A_hat, B_hat, C_hat, info
@@ -317,7 +372,7 @@ class SubspaceDMDc(BaseDMD):
     def subspace_dmdc_multitrial_custom(self, y_list, u_list, p, f, n=None, lamb=1e-8, energy=0.999):
         """Subspace-DMDc using custom method."""
         U_p, Y_p, U_f, Y_f, Z_p, valid_trials, T_per_trial, T_total, p_out, m = \
-            self._validate_and_collect_data(y_list, u_list, p, f)
+            self._collect_data(y_list, u_list, p, f)
         
         UfUfT = U_f @ U_f.T
         Xsolve = np.linalg.solve(UfUfT + lamb*np.eye(UfUfT.shape[0]), U_f)
@@ -349,7 +404,8 @@ class SubspaceDMDc(BaseDMD):
         A_hat, B_hat = self._perform_ridge_regression(X, X_next, U_mid, n, lamb)
         
         C_hat = Gamma_hat[:p_out, :]
-        
+        noise_covariance, R_hat, Q_hat, S_hat = self._estimate_noise_covariance(X_next, A_hat, X, B_hat, U_mid, Y_curr, C_hat)
+
         info = {
             "singular_values_O": s, 
             "rank_used": n, 
@@ -361,10 +417,42 @@ class SubspaceDMDc(BaseDMD):
             "T_per_trial": T_per_trial,
             "T_total": T_total,
             "trial_lengths": [y.shape[1] for y in y_list],
-            "X_hat": X_hat
+            "noise_covariance": noise_covariance,
+            'R_hat': R_hat,
+            'Q_hat': Q_hat,
+            'S_hat': S_hat,
+            'X_hat': X_hat
         }
         
         return A_hat, B_hat, C_hat, info
+
+
+    def _convert_to_subspace_dmdc_data_format(self,y, u):
+        """Convert the data and control data to the format required for SubspaceDMDc."""
+        if isinstance(y, list) and isinstance(u, list):
+            y_list = []
+            u_list = []
+            for y_trial, u_trial in zip(y, u):
+                if y_trial.ndim == 3 and u_trial.ndim == 3:
+                    for t in range(len(y_trial)):
+                        y_list.append(y_trial[t].T)
+                        u_list.append(u_trial[t].T)
+                elif y_trial.ndim == 2 and u_trial.ndim == 2:
+                    y_list.append(y_trial.T)
+                    u_list.append(u_trial.T)
+                else:
+                    raise ValueError("Invalid dimension. Only list of (n_trials, n_timepoints, n_features) or (n_timepoints, n_features) arrays are supported.")
+        else:
+            if y.ndim == 2:
+                y_list = [y]
+                u_list = [u]
+            else:
+                y_list = [y[i] for i in range(y.shape[0])]
+                u_list = [u[i] for i in range(u.shape[0])]
+            y_list = [y_trial.T for y_trial in y_list]
+            u_list = [u_trial.T for u_trial in u_list]
+        return y_list, u_list
+
 
     def subspace_dmdc_multitrial_flexible(self, y, u, p, f, n=None, lamb=1e-8, energy=0.999, backend='n4sid'):
         """
@@ -374,29 +462,11 @@ class SubspaceDMDc(BaseDMD):
         - y: either (n_trials, p_out, N) array, (p_out, N) array, or list of (p_out, N_i) arrays
         - u: either (n_trials, m, N) array, (m, N) array, or list of (m, N_i) arrays
         """
-        if isinstance(y, list) and isinstance(u, list):
-            y_list = [y_trial.T for y_trial in y]
-            u_list = [u_trial.T for u_trial in u]
-            if backend == 'n4sid':
-                return self.subspace_dmdc_multitrial_QR_decomposition(y_list, u_list, p, f, n, lamb, energy)
-            else:
-                return self.subspace_dmdc_multitrial_custom(y_list, u_list, p, f, n, lamb, energy)
-        
+        y_list, u_list = self._convert_to_subspace_dmdc_data_format(y, u)
+        if backend == 'n4sid':
+            return self.subspace_dmdc_multitrial_QR_decomposition(y_list, u_list, p, f, n, lamb, energy)
         else:
-            if y.ndim == 2:
-                y_list = [y]
-                u_list = [u]
-            else:
-                y_list = [y[i] for i in range(y.shape[0])]
-                u_list = [u[i] for i in range(u.shape[0])]
-            
-            y_list = [y_trial.T for y_trial in y_list]
-            u_list = [u_trial.T for u_trial in u_list]
-            
-            if backend == 'n4sid':
-               return self.subspace_dmdc_multitrial_QR_decomposition(y_list, u_list, p, f, n, lamb, energy)
-            else:
-                return self.subspace_dmdc_multitrial_custom(y_list, u_list, p, f, n, lamb, energy)
+            return self.subspace_dmdc_multitrial_custom(y_list, u_list, p, f, n, lamb, energy)
 
 
     def predict(self, test_data=None, control_data=None, reseed=None):
