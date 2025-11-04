@@ -160,7 +160,7 @@ class SubspaceDMDc(BaseDMD):
         
         def hankel_stack(X, start, L):
             # X is now (n_timepoints, n_features), so we transpose for slicing
-            # then stack along axis=0 to get (L * n_features, 1)
+            # then stack along axis=0 
             return np.concatenate([X[start + i:start + i + 1, :].T for i in range(L)], axis=0)
         
         for trial_idx, (Y_trial, U_trial) in enumerate(zip(y_list, u_list)):
