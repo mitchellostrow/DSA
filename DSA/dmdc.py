@@ -353,13 +353,13 @@ class DMDc(BaseDMD):
             self.Sh
         )
 
-        self.Vht_minus, self.Vht_plus = self.get_plus_minus(self.Vh, self.H,self.H_shapes)
-        self.Vut_minus, _ = self.get_plus_minus(self.Vu, self.Hu,self.Hu_shapes)
+        self.Vht_minus, self.Vht_plus = self.get_plus_minus(self.Vh, self.H,self.H_shapes if self.is_list_data else None)
+        self.Vut_minus, _ = self.get_plus_minus(self.Vu, self.Hu,self.Hu_shapes if self.is_list_data else None)
 
         if self.verbose:
             print("SVDs computed!")
 
-    def get_plus_minus(self, V, H,H_shapes):
+    def get_plus_minus(self, V, H,H_shapes=None):
         if self.ntrials > 1:
             if self.is_list_data:
                 V_split = torch.split(V, self.H_row_counts, dim=0)

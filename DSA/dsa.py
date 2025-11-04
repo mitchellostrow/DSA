@@ -607,6 +607,18 @@ class GeneralizedDSA:
                 self.method = "bipartite-pairwise"
                 if self.Y_control is not None and not isinstance(self.Y_control, list):
                     self.Y_control = [self.Y_control]
+                if tensor_or_np(self.Y[0]):
+                    has_control = self.X_control is not None or self.Y_control is not None
+                    if has_control:
+                        suggestion = ("If arrays within X (and Y) are samples from the same system, "
+                                     "switch to using GeneralizedDSA(X=[X,Y], X_control=[X_control,Y_control], Y=None, Y_control=None.)")
+                    else:
+                        suggestion = ("If arrays within X (and Y) are samples from the same system, "
+                                     "switch to using GeneralizedDSA(X=[X,Y], Y=None)")
+                    warnings.warn(
+                        "When using cross-comparison with a list of arrays, gDSA treats each array as its own system.\n"
+                        + suggestion
+                    )
             elif tensor_or_np(self.Y):
                 self.method = "list-to-one"
                 self.Y = [self.Y]  # wrap in a list for iteration
