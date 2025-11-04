@@ -703,16 +703,43 @@ class GeneralizedDSA:
         self.fit_dmds()
         return self.score()
 
-    def get_dmd_matrix(self, dmd):
+    def get_compare_objects(self, dmd):
+        """
+        Get the comparison objects for similarity computation.
+        
+        For Wasserstein distance on states, returns pre-computed eigenvalues to avoid
+        redundant eigendecomposition. Otherwise returns the full DMD matrix.
+        
+        Parameters
+        ----------
+        dmd : DMD object
+            The fitted DMD model
+        
+        Returns
+        -------
+        matrix or eigenvalues : torch.Tensor or np.ndarray
+            Either the state matrix (for angular/euclidean metrics) or 
+            eigenvalues as 1D complex array (for Wasserstein distance)
+        """
         if self.dmd_api_source == "local_dmd":
-            return dmd.A_v
+            matrix = dmd.A_v
         elif self.dmd_api_source == "pykoopman":
-            return dmd.A
+            matrix = dmd.A
         elif self.dmd_api_source == "pydmd":
             raise ValueError(
                 "DSA is not currently compatible with pydmd due to \
                 data structure incompatibility. Please use pykoopman instead."
             )
+        
+        # Return eigenvalues directly for Wasserstein distance on states
+        if (not self.simdist_has_control 
+            and self.simdist_config.get("score_method") == "wasserstein"):
+            if not isinstance(matrix, torch.Tensor):
+                matrix = torch.from_numpy(matrix).float()
+            eigenvalues = torch.linalg.eig(matrix).eigenvalues
+            return eigenvalues
+        
+        return matrix
 
     def get_dmd_control_matrix(self, dmd):
         if self.dmd_api_source == "local_dmd":
@@ -757,6 +784,16 @@ class GeneralizedDSA:
 
         self.sims = np.zeros((len(self.dmds[0]), len(self.dmds[ind2]), n_sims))
 
+        # Pre-compute comparison objects (matrices or eigenvalues) to avoid redundant computation
+        if (not self.simdist_has_control 
+            and self.simdist_config.get("score_method") == "wasserstein"):
+            if self.verbose:
+                print("Pre-computing eigenvalues for Wasserstein distance...")
+        
+        self.cached_compare_objects = [
+            [self.get_compare_objects(dmd) for dmd in self.dmds[0]],
+            [self.get_compare_objects(dmd) for dmd in self.dmds[ind2]]
+        ]
 
         def compute_similarity(i, j):
             if self.method == "self-pairwise" and j >= i:
@@ -766,8 +803,8 @@ class GeneralizedDSA:
                 print(f"computing similarity between DMDs {i} and {j}")
 
             simdist_args = [
-                self.get_dmd_matrix(self.dmds[0][i]),
-                self.get_dmd_matrix(self.dmds[ind2][j]),
+                self.cached_compare_objects[0][i],
+                self.cached_compare_objects[1][j],
             ]
 
             if self.simdist_has_control and self.dmd_has_control:
@@ -777,10 +814,11 @@ class GeneralizedDSA:
                         self.get_dmd_control_matrix(self.dmds[ind2][j]),
                     ]
                 )
+            
             sim = self.simdist.fit_score(*simdist_args)
 
             if self.verbose and self.n_jobs != 1:
-                print(f"computing similarity between DMDs {i} and {j}")
+                print(f"finished similarity between DMDs {i} and {j}")
 
             return (i, j, sim)
 

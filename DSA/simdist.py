@@ -193,9 +193,9 @@ class SimilarityTransformDist:
         Parameters
         __________
         A : np.array or torch.tensor or DMD object
-            first data matrix
+            first data matrix or pre-computed eigenvalues (1D complex numpy/torch array) for Wasserstein
         B : np.array or torch.tensor or DMD object
-            second data matrix
+            second data matrix or pre-computed eigenvalues (1D complex numpy/torch array) for Wasserstein
         iters : int or None
             number of optimization steps, if None then resorts to saved self.iters
         lr : float or None
@@ -205,23 +205,55 @@ class SimilarityTransformDist:
         _______
         None
         """
-        if isinstance(A, DMD):
-            A = A.A_v
-        if isinstance(B, DMD):
-            B = B.A_v
+        score_method = self.score_method if score_method is None else score_method
+        
+        # Check if we received pre-computed eigenvalues (1D complex array) for Wasserstein
+        precomputed_eigenvalues = False
+        if score_method == "wasserstein":
+            # Detect if inputs are 1D complex eigenvalues (torch.Tensor or numpy array)
+            is_A_complex_1d = (
+                (isinstance(A, torch.Tensor) and A.ndim == 1 and torch.is_complex(A)) or
+                (isinstance(A, np.ndarray) and A.ndim == 1 and np.iscomplexobj(A))
+            )
+            is_B_complex_1d = (
+                (isinstance(B, torch.Tensor) and B.ndim == 1 and torch.is_complex(B)) or
+                (isinstance(B, np.ndarray) and B.ndim == 1 and np.iscomplexobj(B))
+            )
+            
+            if is_A_complex_1d and is_B_complex_1d:
+                precomputed_eigenvalues = True
+                # Convert to torch tensors if needed, then to (n, 2) format [real, imag]
+                if isinstance(A, np.ndarray):
+                    A = torch.from_numpy(A)
+                if isinstance(B, np.ndarray):
+                    B = torch.from_numpy(B)
+                
+                a = torch.vstack([A.real, A.imag]).T.to(self.device)
+                b = torch.vstack([B.real, B.imag]).T.to(self.device)
+                # Store for compatibility with score()
+                self.A = A.to(self.device)
+                self.B = B.to(self.device)
+        
+        if not precomputed_eigenvalues:
+            # Original logic for matrices
+            if isinstance(A, DMD):
+                A = A.A_v
+            if isinstance(B, DMD):
+                B = B.A_v
 
-        assert A.shape[0] == A.shape[1]
-        assert B.shape[0] == B.shape[1]
+            assert A.shape[0] == A.shape[1]
+            assert B.shape[0] == B.shape[1]
 
-        A = A.to(self.device)
-        B = B.to(self.device)
-        self.A, self.B = A, B
+            A = A.to(self.device)
+            B = B.to(self.device)
+            self.A, self.B = A, B
+        
         lr = self.lr if lr is None else lr
         iters = self.iters if iters is None else iters
-        score_method = self.score_method if score_method is None else score_method
 
         if score_method == "wasserstein":
-            a, b = self._get_wasserstein_vars(A, B)
+            if not precomputed_eigenvalues:
+                a, b = self._get_wasserstein_vars(A, B)
             device = a.device
             # a = a  # .cpu()
             # b = b  # .cpu()
@@ -448,25 +480,35 @@ class SimilarityTransformDist:
         score_method = self.score_method if score_method is None else score_method
 
         if isinstance(A, np.ndarray):
-            A = torch.from_numpy(A).float()
+            A = torch.from_numpy(A)
         if isinstance(B, np.ndarray):
-            B = torch.from_numpy(B).float()
+            B = torch.from_numpy(B)
 
-        assert A.shape[0] == B.shape[1] or self.wasserstein_compare is not None
-        if A.shape[0] != B.shape[0]:
-            # if self.wasserstein_compare is None:
-            # raise AssertionError(
-            # "Matrices must be the same size unless using wasserstein distance"
-            # )
-            if (
-                score_method != "wasserstein"
-            ):  # otherwise resort to L2 Wasserstein over singular or eigenvalues
-                warnings.warn(
-                    f"shapes are not aligned, resorting to wasserstein distance over {self.wasserstein_compare}"
-                )
-                score_method = "wasserstein"
-            else:
-                pass
+        # Check if we have 2D matrices or 1D eigenvalues
+        is_matrix = A.ndim == 2 and B.ndim == 2
+        is_eigenvalues = A.ndim == 1 and B.ndim == 1
+        
+        if is_matrix:
+            assert A.shape[0] == B.shape[1] or self.wasserstein_compare is not None
+            if A.shape[0] != B.shape[0]:
+                # if self.wasserstein_compare is None:
+                # raise AssertionError(
+                # "Matrices must be the same size unless using wasserstein distance"
+                # )
+                if (
+                    score_method != "wasserstein"
+                ):  # otherwise resort to L2 Wasserstein over singular or eigenvalues
+                    warnings.warn(
+                        f"shapes are not aligned, resorting to wasserstein distance over {self.wasserstein_compare}"
+                    )
+                    score_method = "wasserstein"
+                else:
+                    pass
+        elif is_eigenvalues:
+            # For eigenvalues, different sizes are handled by padding in _get_wasserstein_vars
+            pass
+        else:
+            raise ValueError(f"A and B must both be 2D matrices or both be 1D eigenvalue arrays. Got shapes A: {A.shape}, B: {B.shape}")
 
         self.fit(
             A,
