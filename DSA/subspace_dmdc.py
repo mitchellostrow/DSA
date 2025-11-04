@@ -148,8 +148,8 @@ class SubspaceDMDc(BaseDMD):
 
     def _collect_data(self, y_list, u_list, p, f):
         """Helper function to validate dimensions and collect data from trials."""
-        p_out = y_list[0].shape[0]
-        m = u_list[0].shape[0]
+        p_out = y_list[0].shape[-1]
+        m = u_list[0].shape[-1]
         
         U_p_all = []
         Y_p_all = []
@@ -159,10 +159,12 @@ class SubspaceDMDc(BaseDMD):
         T_per_trial = []
         
         def hankel_stack(X, start, L):
-            return np.concatenate([X[:, start + i:start + i + 1] for i in range(L)], axis=0)
+            # X is now (n_timepoints, n_features), so we transpose for slicing
+            # then stack along axis=0 to get (L * n_features, 1)
+            return np.concatenate([X[start + i:start + i + 1, :].T for i in range(L)], axis=0)
         
         for trial_idx, (Y_trial, U_trial) in enumerate(zip(y_list, u_list)):
-            N_trial = Y_trial.shape[1]
+            N_trial = Y_trial.shape[0]
             T_trial = N_trial - (p + f)
             
             if T_trial <= 0:
@@ -306,14 +308,16 @@ class SubspaceDMDc(BaseDMD):
             
             original_trial_idx = valid_trials[trial_idx]
             U_trial = u_list[original_trial_idx]
-            U_mid_trial = U_trial[:, p:p + (T_trial - 1)]
+            # U_trial is now (n_timepoints, n_features), slice rows then transpose
+            U_mid_trial = U_trial[p:p + (T_trial - 1), :].T
             
             X_segments.append(X_trial_curr)
             X_next_segments.append(X_trial_next)
             U_mid_segments.append(U_mid_trial)
 
             Y_trial = y_list[original_trial_idx]
-            Y_trial_curr = Y_trial[:, p:p+T_trial-1]
+            # Y_trial is now (n_timepoints, n_features), slice rows then transpose
+            Y_trial_curr = Y_trial[p:p+T_trial-1, :].T
             Y_segments.append(Y_trial_curr)
                         
             start_idx += T_trial
@@ -435,11 +439,11 @@ class SubspaceDMDc(BaseDMD):
             for y_trial, u_trial in zip(y, u):
                 if y_trial.ndim == 3 and u_trial.ndim == 3:
                     for t in range(len(y_trial)):
-                        y_list.append(y_trial[t].T)
-                        u_list.append(u_trial[t].T)
+                        y_list.append(y_trial[t])
+                        u_list.append(u_trial[t])
                 elif y_trial.ndim == 2 and u_trial.ndim == 2:
-                    y_list.append(y_trial.T)
-                    u_list.append(u_trial.T)
+                    y_list.append(y_trial)
+                    u_list.append(u_trial)
                 else:
                     raise ValueError("Invalid dimension. Only list of (n_trials, n_timepoints, n_features) or (n_timepoints, n_features) arrays are supported.")
         else:
@@ -449,8 +453,8 @@ class SubspaceDMDc(BaseDMD):
             else:
                 y_list = [y[i] for i in range(y.shape[0])]
                 u_list = [u[i] for i in range(u.shape[0])]
-            y_list = [y_trial.T for y_trial in y_list]
-            u_list = [u_trial.T for u_trial in u_list]
+            y_list = [y_trial for y_trial in y_list]
+            u_list = [u_trial for u_trial in u_list]
         return y_list, u_list
 
 
