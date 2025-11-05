@@ -860,6 +860,34 @@ class GeneralizedDSA:
 
 
 class DSA(GeneralizedDSA):
+    """
+    Dynamical Similarity Analysis (DSA) for Data-driven dynamics comparison
+
+    Attributes:
+        X : np.array or torch.tensor or list of np.arrays or torch.tensors
+            First data matrix/matrices.
+        Y : None or np.array or torch.tensor or list of np.arrays or torch.tensors
+            Second data matrix/matrices. If None, X is compared to itself pairwise.
+        dmd_class : class
+            DMD class to use model fitting. Default is the local Havok, 
+            but pykoopman objects can be passed in, for example
+        device : str
+            Device to use for computation ('cpu' or 'cuda'). Default is 'cpu'.
+        verbose : bool
+            Whether to print verbose output during computation. Default is False.
+        n_jobs : int
+            Number of parallel jobs to use. Default is 1 (sequential).
+        **dmd_kwargs (dictionary of dmd arguments--for HAVOK, see DMDConfig, repeated here:
+            DMD Attributes:
+                n_delays (int): Number of time delays to use in the Hankel matrix construction.
+                    Default is 1 (no delays).
+                delay_interval (int): Interval between delays in the Hankel matrix.
+                    Default is 1 (consecutive time steps).
+                rank (int): Rank for SVD truncation. If None, no truncation is performed.
+                    Default is None.
+                lamb (float): Regularization parameter for ridge regression.
+                    Default is 0 (no regularization). 
+    """
     def __init__(
         self,
         X,
@@ -874,7 +902,6 @@ class DSA(GeneralizedDSA):
         lr: float = 5e-3,
         **dmd_kwargs,
     ):
-        # TODO: add readme
         simdist_config = {
             "score_method": score_method,
             "iters": iters,
@@ -899,6 +926,33 @@ class DSA(GeneralizedDSA):
 
 
 class InputDSA(GeneralizedDSA):
+    """
+    Dynamical Similarity Analysis (DSA) for controlled systems
+
+    Attributes:
+        X (required) : np.array or torch.tensor or list of np.arrays or torch.tensors
+            First data matrix/matrices.
+        X_control (required) : np.array or torch.tensor or list of np.arrays or torch.tensors
+            Control data matrix/matrices for X.
+        Y : None or np.array or torch.tensor or list of np.arrays or torch.tensors
+            Second data matrix/matrices. If None, X is compared to itself pairwise.
+        Y_control : None or np.array or torch.tensor or list of np.arrays or torch.tensors
+            Control data matrix/matrices for Y. Must be the same shape as Y.
+        dmd_class : class
+            DMD class to use for decomposition. Default is SubspaceDMDc.
+        dmd_config: class or dictionary containing parameters of the dmd model 
+        simdist_config: class or dictionary containing parameters used for comparison. 
+            Depending on what is in here (e.g. compare = "state" versus "joint" or "input"),
+            the type of comparison will be direclty inferred -- "state" yields standard DSA metric,
+            "input" or "joint" yields the controlalbility metric.
+        device : str
+            Device to use for computation ('cpu' or 'cuda'). Default is 'cpu'.
+        verbose : bool
+            Whether to print verbose output during computation. Default is False.
+        n_jobs : int
+            Number of parallel jobs to use. Default is 1 (sequential).
+
+    """
     def __init__(
         self,
         X,

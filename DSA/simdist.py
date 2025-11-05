@@ -481,8 +481,14 @@ class SimilarityTransformDist:
 
         if isinstance(A, np.ndarray):
             A = torch.from_numpy(A)
+            # Only convert to float if not complex (preserve complex dtypes for eigenvalues)
+            if not torch.is_complex(A):
+                A = A.float()
         if isinstance(B, np.ndarray):
             B = torch.from_numpy(B)
+            # Only convert to float if not complex (preserve complex dtypes for eigenvalues)
+            if not torch.is_complex(B):
+                B = B.float()
 
         # Check if we have 2D matrices or 1D eigenvalues
         is_matrix = A.ndim == 2 and B.ndim == 2
