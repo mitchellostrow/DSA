@@ -85,15 +85,20 @@ def sweep_ranks_delays(
                 continue
             dmd = DMD(train_data, n_delays=nd, rank=r, **dmd_kwargs)
             dmd.fit()
-            pred, H_test_pred, H_test_true, V_test_pred, V_test_true = dmd.predict(
+            
+            # pred, H_test_pred, H_test_true, V_test_pred, V_test_true = dmd.predict(
+            #     test_data, reseed=reseed, full_return=True
+            # )
+            pred, H_test_pred, H_test_true= dmd.predict(
                 test_data, reseed=reseed, full_return=True
             )
             if error_space == "H":
                 pred = H_test_pred
                 test_data_err = H_test_true
             elif error_space == "V":
-                pred = V_test_pred
-                test_data_err = V_test_true
+                raise ValueError("V space not implemented ")
+                # pred = V_test_pred
+                # test_data_err = V_test_true
             elif error_space == "X":
                 pred = pred
                 test_data_err = test_data

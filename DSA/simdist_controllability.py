@@ -21,7 +21,7 @@ class ControllabilitySimilarityTransformDist:
         score_method: Literal["euclidean", "angular"] = "euclidean",
         compare: Literal["joint", "control", "state"] = "joint",
         align_inputs: bool = False,
-        return_distance_components: bool = True,
+        return_distance_components: bool = False,
     ):
         f"""
         Parameters

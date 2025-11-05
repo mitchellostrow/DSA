@@ -7,6 +7,7 @@ import torch.nn.utils.parametrize as parametrize
 from scipy.stats import wasserstein_distance
 import ot  # optimal transport for multidimensional l2 wasserstein
 import warnings
+from typing import Final
 
 try:
     from .dmd import DMD
@@ -142,6 +143,7 @@ class SimilarityTransformDist:
         verbose=False,
         eps=1e-5,
         rescale_wasserstein=False,
+        compare: Final = 'state'
     ):
         """
         Parameters
@@ -164,6 +166,8 @@ class SimilarityTransformDist:
 
         eps : float
             early stopping threshold
+        
+        compare : str (final). dummy variable for inference of types / config
         """
 
         self.iters = iters
@@ -177,6 +181,7 @@ class SimilarityTransformDist:
         self.eps = eps
         self.rescale_wasserstein = rescale_wasserstein
         self.wasserstein_compare = 'eig' # for backwards compatibility
+        self.compare = compare
 
     def fit(
         self,
