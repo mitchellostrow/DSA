@@ -78,7 +78,8 @@ def sweep_ranks_delays(
         assert control_data is not None, "Control data is required for DMDc and SubspaceDMDc"
 
     train_data, test_data, dim = split_train_test(data, train_frac)
-    train_control_data, test_control_data, dim_control = split_train_test(control_data, train_frac)
+    if control_data is not None:
+        train_control_data, test_control_data, dim_control = split_train_test(control_data, train_frac)
 
     all_aics, all_mases, all_nnormals, all_residuals, all_l2norm = [], [], [], [], []
     for nd in tqdm(n_delays):
