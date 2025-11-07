@@ -1,6 +1,8 @@
 import numpy as np
 from tqdm import tqdm
 from .dmd import DMD
+from .dmdc import DMDc
+from .subspace_dmdc import SubspaceDMDc
 from .stats import (
     measure_nonnormality_transpose,
     compute_all_stats,
@@ -9,7 +11,7 @@ from .stats import (
 from .resdmd import compute_residuals
 import matplotlib.pyplot as plt
 from typing import Literal
-
+import warnings
 
 def split_train_test(data, train_frac=0.8):
     if isinstance(data, list):
@@ -33,13 +35,15 @@ def sweep_ranks_delays(
     data,
     n_delays,
     ranks,
+    control_data=None,
     train_frac=0.8,
     reseed=5,
     return_residuals=True,
     return_transient_growth=False,
     return_mse=False,
     error_space="X",
-    **dmd_kwargs,
+    model_class=['DMD', 'DMDc', 'SubspaceDMDc'][0],
+    **model_kwargs,
 ):
     """
     Sweep over combinations of DMD ranks and delays, returning AIC, MASE, non-normality, and residuals.
@@ -70,7 +74,12 @@ def sweep_ranks_delays(
     all_aics, all_mases, all_nnormals, all_residuals, all_num_abscissa, all_l2norm : np.ndarray
         Arrays of results for each (delay, rank) pair.
     """
+    if model_class in ['DMDc', 'SubspaceDMDc']:
+        assert control_data is not None, "Control data is required for DMDc and SubspaceDMDc"
+
     train_data, test_data, dim = split_train_test(data, train_frac)
+    train_control_data, test_control_data, dim_control = split_train_test(control_data, train_frac)
+
     all_aics, all_mases, all_nnormals, all_residuals, all_l2norm = [], [], [], [], []
     for nd in tqdm(n_delays):
         rresiduals = []
@@ -83,16 +92,34 @@ def sweep_ranks_delays(
                 rresiduals.append(np.inf)
                 l2norms.append(np.inf)
                 continue
-            dmd = DMD(train_data, n_delays=nd, rank=r, **dmd_kwargs)
-            dmd.fit()
+
+            if model_class == 'DMD':
+                model = DMD(train_data, n_delays=nd, rank=r, **model_kwargs)
+            elif model_class == 'DMDc':
+                model = DMDc(train_data, train_control_data, n_delays=nd, rank_output=r, **model_kwargs)
+            elif model_class == 'SubspaceDMDc':
+                model = SubspaceDMDc(train_data, train_control_data, n_delays=nd, rank=r, **model_kwargs)
+            else:
+                raise ValueError(f"Invalid model class: {model_class}. Valid options are 'DMD', 'DMDc', and 'SubspaceDMDc'.")
+            model.fit()
             
             # pred, H_test_pred, H_test_true, V_test_pred, V_test_true = dmd.predict(
             #     test_data, reseed=reseed, full_return=True
             # )
-            pred, H_test_pred, H_test_true= dmd.predict(
-                test_data, reseed=reseed, full_return=True
-            )
+            if model_class == "DMD":
+                pred, H_test_pred, H_test_true= model.predict(
+                    test_data, reseed=reseed, full_return=True
+                )
+            elif model_class == "DMDc":
+                pred, H_test_pred, H_test_true= model.predict(
+                    test_data, test_control_data, reseed=reseed, full_return=True
+                )
+            else:
+                pred = model.predict(test_data, test_control_data, reseed=reseed)
+
             if error_space == "H":
+                if model_class == 'SubspaceDMDc':
+                    raise ValueError("H space not implemented for SubspaceDMDc. Use X space instead.")
                 pred = H_test_pred
                 test_data_err = H_test_true
             elif error_space == "V":
@@ -117,27 +144,32 @@ def sweep_ranks_delays(
             # pred = pred[:, :, -ndim:]
             # stats = compute_all_stats(pred, test_data_err[:, :, -ndim:], dmd.rank)
             # else:
-            stats = compute_all_stats(test_data_err, pred, dmd.rank)
+            stats = compute_all_stats(test_data_err, pred, model.rank if model_class in ['DMD', 'SubspaceDMDc'] else model.rank_output)
             aic = stats["AIC"]
             mase = stats["MASE"]
             if return_mse:
                 mase = stats["MSE"]
             nnormal = measure_nonnormality_transpose(
-                dmd.A_v.cpu().detach().numpy() if hasattr(dmd.A_v, "cpu") else dmd.A_v
+                model.A_v.cpu().detach().numpy() if hasattr(model.A_v, "cpu") else model.A_v
             )
             if return_transient_growth:
                 l2norm = measure_transient_growth(
-                    dmd.A_v.cpu().detach().numpy()
-                    if hasattr(dmd.A_v, "cpu")
-                    else dmd.A_v
+                    model.A_v.cpu().detach().numpy()
+                    if hasattr(model.A_v, "cpu")
+                    else model.A_v
                 )
             else:
                 l2norm = None
-            L, G, residuals, _ = compute_residuals(dmd)
+            if return_residuals and model_class == 'DMD':
+                L, G, residuals, _ = compute_residuals(model)
+                residuals = np.mean(residuals)
+            else:
+                warnings.warn(f"Residuals not implemented for {model_class}")
+                residuals = None
             aics.append(aic)
             mases.append(mase)
             nnormals.append(nnormal)
-            rresiduals.append(np.mean(residuals))
+            rresiduals.append(residuals)
             l2norms.append(l2norm)
         all_aics.append(aics)
         all_mases.append(mases)
