@@ -80,6 +80,9 @@ class SubspaceDMDc(BaseDMD):
                                                             backend=self.backend,
                                                             lamb=self.lamb)
         
+        self.A = self.A_v
+        self.B = self.B_v
+        self.C = self.C_v
         # Send to CPU if requested (inherited from BaseDMD)
         if self.send_to_cpu:
             self.all_to_device(device='cpu')

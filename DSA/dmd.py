@@ -412,6 +412,7 @@ class DMD(BaseDMD):
             @ self.Vt_plus[:, : self.rank]
         ).T
         self.A_v = A_v
+        self.A = A_v #for compatibility with pydmd
         self.A_havok_dmd = (
             self.U
             @ self.S_mat[: self.U.shape[1], : self.rank]
@@ -471,6 +472,7 @@ class DMD(BaseDMD):
             @ self.S_mat_inv[: self.A_v.shape[0], : self.U.shape[1]]
             @ self.U.T
         )
+        self.A = self.A_v
 
         if self.verbose:
             print("Reduced Rank Regression complete! \n")

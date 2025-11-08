@@ -480,8 +480,8 @@ class DMDc(BaseDMD):
         )
 
         # Set the A and B properties for backward compatibility and easier access
-        self.A = self.A_havok_dmd
-        self.B = self.B_havok_dmd
+        self.A = self.A_v
+        self.B = self.A_v
 
         if self.verbose:
             print("DMDc matrices computed!")
