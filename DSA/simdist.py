@@ -279,7 +279,7 @@ class SimilarityTransformDist:
 
             self.C_star = ot.emd(a, b, self.M)
             self.score_star = (
-                ot.emd2(a, b, self.M) * a.shape[0]
+                ot.emd2(a, b, self.M) #* a.shape[0]
             )  # add scaling factor due to random matrix theory
             # self.score_star = np.sum(self.C_star * self.M)
             self.C_star = self.C_star / torch.linalg.norm(
