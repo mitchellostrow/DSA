@@ -278,9 +278,9 @@ class FunctionTransformer(TransformerMixin, BaseEstimator):
         Args:
             X (array-like): Input data to be checked for inverse transform consistency.
         """
-        idx_selected = slice(None, None, max(1, X.shape[0] // 100))
+        # idx_selected = slice(None, None, max(1, X.shape[0] // 100))
         # X_round_trip = self.inverse_transform(self.transform(X[idx_selected]))
-        self.inverse_transform(self.transform(X[idx_selected]))
+        self.inverse_transform(self.transform(X))
         # if not _allclose_dense_sparse(X[idx_selected], X_round_trip):
         #     warnings.warn(
         #         "The provided functions are not strictly"
