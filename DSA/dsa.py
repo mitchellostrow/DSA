@@ -324,7 +324,7 @@ class DSA:
                 if self.verbose:
                     print(f'computing similarity between DMDs {i} and {j}')
                 
-                self.sims[i,j] = self.simdist.fit_score(dmd1.A_v,dmd2.A_v,iters,lr,score_method,zero_pad=self.zero_pad)
+                self.sims[i,j] = self.simdist.fit_score(dmd1.A_v,dmd2.A_v,iters,lr,score_method)
 
                 if self.method == 'self-pairwise':
                     self.sims[j,i] = self.sims[i,j]
