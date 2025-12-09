@@ -131,7 +131,7 @@ class BaseDMD(ABC):
                 return processed_data, True
 
         elif isinstance(data, np.ndarray):
-            return torch.from_numpy(data), False
+            return torch.from_numpy(data.copy()), False
 
         return data, False
 
