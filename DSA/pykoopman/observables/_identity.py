@@ -29,8 +29,9 @@ class Identity(BaseObservables):
         Fit the model to the provided measurement data.
 
         Args:
-            x (array-like): The measurement data to be fit. It must have a shape of
-                (n_samples, n_input_features).
+            x (array-like): The measurement data to be fit. Can be 2D (n_samples,
+                n_input_features), 3D (n_trials, n_samples, n_input_features), or
+                list of arrays.
             y (None): This parameter is retained for sklearn compatibility.
 
         Returns:
@@ -40,12 +41,16 @@ class Identity(BaseObservables):
             only identity mapping is supported for list of arb trajectories
         """
         x = validate_input(x)
-        if not isinstance(x, list):
-            self.n_input_features_ = self.n_output_features_ = x.shape[1]
-            self.measurement_matrix_ = np.eye(x.shape[1]).T
-        else:
-            self.n_input_features_ = self.n_output_features_ = x[0].shape[1]
-            self.measurement_matrix_ = np.eye(x[0].shape[1]).T
+        
+        # Handle lists and 3D by fitting on first element/trial
+        if isinstance(x, list):
+            x = x[0]  # Fit on first element
+        if x.ndim == 3:
+            x = x[0]  # Fit on first trial
+        
+        # Now x is 2D, proceed as normal
+        self.n_input_features_ = self.n_output_features_ = x.shape[1]
+        self.measurement_matrix_ = np.eye(x.shape[1]).T
 
         self.n_consumed_samples = 0
 

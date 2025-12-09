@@ -79,7 +79,8 @@ class CustomObservables(BaseObservables):
 
         Args:
             x (array-like, shape (n_samples, n_input_features)): Measurement data to be
-                fitted.
+                fitted. Can also be 3D (n_trials, n_samples, n_features) or list of
+                arrays.
             y (None): This is a dummy parameter added for compatibility with sklearn's
                 API. Default is None.
 
@@ -87,6 +88,14 @@ class CustomObservables(BaseObservables):
             self (CustomObservables): This method returns the fitted instance.
         """
         x = validate_input(x)
+        
+        # Handle lists and 3D by fitting on first element/trial
+        if isinstance(x, list):
+            x = x[0]  # Fit on first element
+        if x.ndim == 3:
+            x = x[0]  # Fit on first trial
+        
+        # Now x is 2D, proceed as normal
         n_samples, n_features = x.shape
 
         n_output_features = 0

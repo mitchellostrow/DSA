@@ -91,7 +91,8 @@ class Polynomial(PolynomialFeatures, BaseObservables):
 
         Args:
             x (np.ndarray): The measurement data to be fit, with shape (n_samples,
-                n_features).
+                n_features). Can also be 3D (n_trials, n_samples, n_features) or
+                list of arrays.
             y (array-like, optional): Dummy input. Defaults to None.
 
         Returns:
@@ -101,17 +102,29 @@ class Polynomial(PolynomialFeatures, BaseObservables):
             ValueError: If the input data is not valid.
         """
         x = validate_input(x)
+        
+        # Handle lists and 3D by fitting on first element/trial
+        if isinstance(x, list):
+            x = x[0]  # Fit on first element
+        if x.ndim == 3:
+            x = x[0]  # Fit on first trial
+        
+        # Now x is 2D, proceed as normal
         self.n_consumed_samples = 0
 
-        y_poly_out = super(Polynomial, self).fit(x.real, y)
+        super(Polynomial, self).fit(x.real, y)
+        
+        # Set custom attributes that our code expects
+        self.n_input_features_ = x.shape[1]
+        # n_output_features_ is already set by superclass fit()
 
-        self.measurement_matrix_ = np.zeros([x.shape[1], y_poly_out.n_output_features_])
+        self.measurement_matrix_ = np.zeros([x.shape[1], self.n_output_features_])
         if self.include_bias:
             self.measurement_matrix_[:, 1 : 1 + x.shape[1]] = np.eye(x.shape[1])
         else:
             self.measurement_matrix_[:, : x.shape[1]] = np.eye(x.shape[1])
 
-        return y_poly_out
+        return self
 
     def transform(self, x):
         """

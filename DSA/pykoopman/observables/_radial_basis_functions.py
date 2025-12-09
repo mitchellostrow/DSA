@@ -98,6 +98,9 @@ class RadialBasisFunction(BaseObservables):
         Initializes the RadialBasisFunction with specified parameters.
 
         Args:
+            x (array-like): The input data, shape (n_samples, n_input_features).
+                Can also be 3D (n_trials, n_samples, n_features) or list of arrays.
+            y (None): Dummy parameter for sklearn compatibility.
             rbf_type (str, optional): The type of radial basis functions to be used.
                 Options are: 'gauss', 'thinplate', 'invquad', 'invmultquad',
                 'polyharmonic'. Defaults to 'gauss'.
@@ -122,6 +125,14 @@ class RadialBasisFunction(BaseObservables):
                 n_centers is not equal to centers.shape[1].
         """
         x = validate_input(x)
+        
+        # Handle lists and 3D by fitting on first element/trial
+        if isinstance(x, list):
+            x = x[0]  # Fit on first element
+        if x.ndim == 3:
+            x = x[0]  # Fit on first trial
+        
+        # Now x is 2D, proceed as normal
         n_samples, n_features = x.shape
         self.n_consumed_samples = 0
 

@@ -88,6 +88,8 @@ class TimeDelay(BaseObservables):
 
         Args:
             x (array-like): The input data, shape (n_samples, n_input_features).
+                Can also be 3D (n_trials, n_samples, n_input_features) or
+                list of arrays.
             y (None): Dummy parameter for sklearn compatibility.
 
         Returns:
@@ -95,6 +97,14 @@ class TimeDelay(BaseObservables):
         """
 
         x = validate_input(x)
+        
+        # Handle lists and 3D by fitting on first element/trial
+        if isinstance(x, list):
+            x = x[0]  # Fit on first element
+        if x.ndim == 3:
+            x = x[0]  # Fit on first trial
+        
+        # Now x is 2D, proceed as normal
         n_samples, n_features = x.shape
 
         self.n_input_features_ = n_features

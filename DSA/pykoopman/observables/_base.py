@@ -182,7 +182,8 @@ class ConcatObservables(BaseObservables):
 
         Args:
             X (numpy.ndarray): Measurement data to be fit, with shape (n_samples,
-                n_input_features_).
+                n_input_features_). Can also be 3D (n_trials, n_samples, n_features)
+                or list of arrays.
             y (numpy.ndarray, optional): Time-shifted measurement data to be fit.
                 Default is None.
 
@@ -197,10 +198,18 @@ class ConcatObservables(BaseObservables):
 
         # first, one must call fit of every observable in the observer list
         # so that n_input_features_ and n_output_features_ are defined
+        # Each observable's fit() now handles lists/3D internally
         for obs in self.observables_list_:
             obs.fit(X, y)
 
-        self.n_input_features_ = X.shape[1]
+        # Get n_input_features from first element/trial if needed
+        X_for_shape = X
+        if isinstance(X, list):
+            X_for_shape = X[0]
+        if X_for_shape.ndim == 3:
+            X_for_shape = X_for_shape[0]
+        
+        self.n_input_features_ = X_for_shape.shape[1]
 
         # total number of output features takes care of redundant identity features
         # for polynomial feature, we will remove the 1 as well if include_bias is true

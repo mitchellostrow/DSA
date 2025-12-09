@@ -80,16 +80,23 @@ class EnsembleBaseRegressor(TransformedTargetRegressor):
 
         # transformers are designed to modify X which is 2d dimensional, we
         # need to modify y accordingly.
-
-        self._training_dim = y.ndim
-        if y.ndim == 1:
-            y_2d = y.reshape(-1, 1)
+        
+        # Handle list inputs (convert to array if list)
+        if isinstance(y, list):
+            # Lists should be flattened by observable/flatten transformers
+            # For now, just note it's a list and it will be transformed by func
+            y_for_transform = y
+            self._training_dim = None  # Will be determined after transform
         else:
-            y_2d = y
-        self._fit_transformer(y_2d)
+            y_for_transform = y
+            self._training_dim = y.ndim
+            if y.ndim == 1:
+                y_for_transform = y.reshape(-1, 1)
+        
+        self._fit_transformer(y_for_transform)
 
         # transform y and convert back to 1d array if needed
-        y_trans = self.transformer_.transform(y_2d)
+        y_trans = self.transformer_.transform(y_for_transform)
         # FIXME: a FunctionTransformer can return a 1D array even when validate
         # is set to True. Therefore, we need to check the number of dimension
         # first.
