@@ -1,4 +1,4 @@
-# Byte-compiled / optimized / DLL files
+# Python cache files
 __pycache__/
 *.py[cod]
 *$py.class
@@ -8,11 +8,7 @@ dist/
 build/
 *.egg-info/
 
-# PyCharm
-.idea/
-
-# VS Code
-.vscode/
-
-# Jupyter Notebook
-.ipynb_checkpoints
+# Virtual environments
+venv/
+env/
+ENV/
