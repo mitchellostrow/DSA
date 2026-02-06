@@ -1,12 +1,7 @@
 from typing import Literal
 import numpy as np
 from scipy.linalg import orthogonal_procrustes
-import torch 
-
-try:
-    from .simdist import SimilarityTransformDist
-except ImportError:
-    from simdist import SimilarityTransformDist
+import torch
 
 
 class ControllabilitySimilarityTransformDist:
