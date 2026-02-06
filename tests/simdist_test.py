@@ -1,6 +1,6 @@
 import pytest
 import numpy as np
-from DSA.simdist import SimilarityTransformDist, pad_zeros
+from DSA.simdist import SimilarityTransformDist
 from scipy.stats import special_ortho_group, ortho_group
 import torch
 
