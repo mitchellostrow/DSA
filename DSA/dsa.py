@@ -511,7 +511,7 @@ class GeneralizedDSA:
                     f"for SimilarityTransformDist, valid options: angular, euclidean, wasserstein"
                 )
             # State comparison doesn't have return_distance_components, so always treated as False
-            new_return_components = False
+            
             
         else:  # 'joint' or 'control'
             simdist_class = ControllabilitySimilarityTransformDist
