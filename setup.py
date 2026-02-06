@@ -20,5 +20,8 @@ setuptools.setup(
         "lightning", #for nndmd in pykoopman
         "prettytable"
     ],
-    extras_require={"dev": ["pytest>=3.7"]},
+    extras_require={
+        "dev": ["pytest>=3.7"],
+        "umap": ["umap-learn"],
+    },
 )

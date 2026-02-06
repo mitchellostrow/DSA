@@ -31,6 +31,9 @@ dependencies = [
 dev = [
     "pytest>=3.7"
 ]
+umap = [
+    "umap-learn"
+]
 
 [project.urls]
 Homepage = "https://github.com/mitchellostrow/DSA"
