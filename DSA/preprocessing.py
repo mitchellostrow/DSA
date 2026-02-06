@@ -217,13 +217,20 @@ def nonlinear_dimensionality_reduction(
         pca = PCA(n_components=n_components)
         model = make_pipeline(nystroem, pca)
     elif method.lower() == "umap":
-        from umap import UMAP
+        try:
+            from umap import UMAP
+        except ImportError:
+            raise ImportError(
+                "umap-learn is not installed. Please install it with "
+                "`pip install umap-learn` or install DSA with the 'umap' extra: "
+                "`pip install dsa-metric[umap]`"
+            )
 
         model = UMAP(n_components=n_components, **kwargs)
     else:
         raise ValueError(
             f"Unknown dimensionality reduction method: {method}. "
-            f"Supported methods are 'isomap', 'lle', 'pca', and 'kernel_pca'."
+            f"Supported methods are 'isomap', 'lle', 'pca', 'kernel_pca', and 'umap'."
         )
 
     reduced_data = model.fit_transform(data)
