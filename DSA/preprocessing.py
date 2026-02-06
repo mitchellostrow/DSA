@@ -344,7 +344,6 @@ def coarse_grain_space(
         )
 
     # Get input shape and dimensionality
-    orig_shape = data.shape
     if data.ndim == 3:
         n_conds, n_time, n_dims = data.shape
         data_reshaped = data.reshape(-1, n_dims)
