@@ -106,7 +106,7 @@ def mse(x, y):
     return ((x - y) ** 2).mean().item()
 
 
-def nmse(x, y):
+def nmse(x, y, eps=1e-10):
     """
     Compute the mean squared error, normalized by the variance of the ground truth.
 
@@ -114,6 +114,9 @@ def nmse(x, y):
         The ground truth time series.
     y : np.ndarray or torch.tensor
         The predicted time series.
+    eps : float, optional
+        Small constant to prevent division by zero when x has zero variance.
+        Default is 1e-10.
 
     Returns
     -------
@@ -122,7 +125,11 @@ def nmse(x, y):
     """
     x = torch_convert(x)
     y = torch_convert(y)
-    return ((x - y) ** 2).mean().item() / ((x - x.mean()) ** 2).mean().item()
+    variance = ((x - x.mean()) ** 2).mean().item()
+    if variance < eps:
+        # If x is constant (zero variance), return inf to indicate undefined NMSE
+        return float('inf') if ((x - y) ** 2).mean().item() > eps else 0.0
+    return ((x - y) ** 2).mean().item() / variance
 
 
 def r2(true_vals, pred_vals):
