@@ -128,8 +128,9 @@ def nmse(x, y, eps=1e-10):
     mse = ((x - y) ** 2).mean().item()
     variance = ((x - x.mean()) ** 2).mean().item()
     if variance < eps:
-        # If x is constant (zero variance), return inf to indicate undefined NMSE
-        return float('inf') if mse > eps else 0.0
+        # If x is constant (zero variance), NMSE is undefined
+        # Return 0.0 if predictions are perfect, inf otherwise
+        return 0.0 if mse < eps else float('inf')
     return mse / variance
 
 
