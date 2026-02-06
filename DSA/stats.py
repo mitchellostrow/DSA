@@ -125,11 +125,12 @@ def nmse(x, y, eps=1e-10):
     """
     x = torch_convert(x)
     y = torch_convert(y)
+    mse = ((x - y) ** 2).mean().item()
     variance = ((x - x.mean()) ** 2).mean().item()
     if variance < eps:
         # If x is constant (zero variance), return inf to indicate undefined NMSE
-        return float('inf') if ((x - y) ** 2).mean().item() > eps else 0.0
-    return ((x - y) ** 2).mean().item() / variance
+        return float('inf') if mse > eps else 0.0
+    return mse / variance
 
 
 def r2(true_vals, pred_vals):
