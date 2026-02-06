@@ -838,8 +838,8 @@ class SeqDataModule(L.LightningDataModule):
         if isinstance(self.data_tr, list):
             data_list = self.data_tr
         elif isinstance(self.data_tr, str):
-            f = open(self.data_tr, "rb")
-            data_list = pickle.load(f)
+            with open(self.data_tr, "rb") as f:
+                data_list = pickle.load(f)
         else:
             raise ValueError("Wrong type of `self.data_tr`")
 
@@ -882,8 +882,8 @@ class SeqDataModule(L.LightningDataModule):
             if isinstance(self.data_val, list):
                 data_list = self.data_val
             elif isinstance(self.data_val, str):
-                f = open(self.data_val, "rb")
-                data_list = pickle.load(f)
+                with open(self.data_val, "rb") as f:
+                    data_list = pickle.load(f)
             else:
                 raise ValueError("Wrong type of `self.data_val`")
 
