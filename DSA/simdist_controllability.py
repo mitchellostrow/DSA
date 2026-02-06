@@ -23,7 +23,7 @@ class ControllabilitySimilarityTransformDist:
         align_inputs: bool = False,
         return_distance_components: bool = False,
     ):
-        f"""
+        """
         Parameters
         ----------
         score_method : {"euclidean", "angular"}
