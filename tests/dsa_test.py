@@ -109,7 +109,7 @@ def test_dsa_1tomany(n, t, c, seed, nmodels):
     dsa = DSA(X, Y)
     sim = dsa.fit_score()
     assert isinstance(sim, np.ndarray)
-    assert sim.shape == (nmodels, 1)
+    assert sim.shape == (nmodels, )
 
 
 @pytest.mark.parametrize("n", [10])
@@ -124,7 +124,7 @@ def test_dsa_manyto1(n, t, c, seed, nmodels):
     dsa = DSA(Y, X)
     sim = dsa.fit_score()
     assert isinstance(sim, np.ndarray)
-    assert sim.shape == (1, nmodels)
+    assert sim.shape == (nmodels,)
 
 
 @pytest.mark.parametrize("n", [10])

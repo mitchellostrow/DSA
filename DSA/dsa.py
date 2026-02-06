@@ -872,8 +872,7 @@ class GeneralizedDSA:
                     self.sims[j, i] = sim
 
         if self.method == "default":
-            return self.sims[0, 0].squeeze()
-
+            return self.sims[0, 0].item()
         return self.sims.squeeze()
 
 

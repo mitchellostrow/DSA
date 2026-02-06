@@ -103,5 +103,6 @@ def test_to_cpu(seed, n, t, c):
     device = "cuda" if torch.cuda.is_available() else "cpu"
     dmd = DMD(X, 1, device=device)
     dmd.fit()
+    dmd.all_to_device()
     assert dmd.A_v.device.type == "cpu"
     assert dmd.H.device.type == "cpu"
