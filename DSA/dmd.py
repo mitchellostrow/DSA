@@ -77,7 +77,7 @@ class DMD(BaseDMD):
 
     def __init__(
         self,
-        data,
+        data=None,
         n_delays=1,
         delay_interval=1,
         rank=None,
@@ -93,13 +93,13 @@ class DMD(BaseDMD):
         """
         Parameters
         ----------
-        data : np.ndarray or torch.tensor
+        data : np.ndarray or torch.tensor, optional
             The data to fit the DMD model to. Must be either: (1) a
             2-dimensional array/tensor of shape T x N where T is the number
             of time points and N is the number of observed dimensions
             at each time point, or (2) a 3-dimensional array/tensor of shape
             K x T x N where K is the number of "trials" and T and N are
-            as defined above.
+            as defined above. If None, data must be provided when calling fit().
 
         n_delays : int
             Parameter that controls the size of the delay embedding. Explicitly,
@@ -153,7 +153,8 @@ class DMD(BaseDMD):
         # DMD always uses PyTorch, so use_torch=True
         self.device, self.use_torch = self._setup_device(device, use_torch=True)
 
-        self.data = self._init_single_data(data)
+        # Allow data=None for deferred fitting
+        self.data = self._init_single_data(data) if data is not None else None
 
         self.n_delays = n_delays
         self.delay_interval = delay_interval
@@ -212,6 +213,10 @@ class DMD(BaseDMD):
         # if parameters are provided, overwrite them from the init
         if data is not None:
             self.data = self._init_single_data(data)
+        
+        # Ensure data is available
+        if self.data is None:
+            raise ValueError("Data must be provided either at initialization or when calling fit()/compute_hankel().")
 
         self.n_delays = self.n_delays if n_delays is None else n_delays
         self.delay_interval = (
@@ -634,12 +639,18 @@ class DMD(BaseDMD):
             return pred_data
 
     def project_onto_modes(self):
-        eigvals, eigvecs = torch.linalg.eigh(self.A_v)
-        # project Vt_minus onto the eigenvectors
-        projections = self.V[:, : self.rank] @ eigvecs
-        projections = projections.reshape(
-            self.data.shape[0], self.data.shape[1] - self.n_delays + 1, -1
-        )
-
-        # get the data that matches the shape of the original data
-        return projections, self.data[:, : -self.n_delays + 1]
+        # Minimal: eigenfunction values per Hankel row + matching time indices + data slice
+        if self.A_v is None or self.V is None:
+            raise ValueError("Call fit() first.")
+        k = int(self.rank or self.A_v.shape[0])
+        eigvals, W = torch.linalg.eig(self.A_v)
+        Winv = torch.linalg.inv(W)
+        Vslice = self.V[:, :k].to(dtype=Winv.dtype, device=self.device)
+        phi = Vslice @ Winv.T.to(dtype=Vslice.dtype, device=self.device)  # (T_embed, k)
+        offset = (self.n_delays - 1) * self.delay_interval
+        if self.data.ndim == 3:
+            x = self.data[:, offset : offset + phi.shape[0], :]  # keep all features
+            phi = phi.reshape(x.shape[0], x.shape[1], -1)
+        else:
+            x = self.data[offset : offset + phi.shape[0], :]
+        return eigvals, phi, x

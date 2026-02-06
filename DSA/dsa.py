@@ -794,10 +794,24 @@ class GeneralizedDSA:
             if self.verbose:
                 print("Pre-computing eigenvalues for Wasserstein distance...")
         
-        self.cached_compare_objects = [
-            [self.get_compare_objects(dmd) for dmd in self.dmds[0]],
-            [self.get_compare_objects(dmd) for dmd in self.dmds[ind2]]
+        cache_iter = lambda items, desc: (
+            tqdm.tqdm(items, desc=desc) if self.verbose else items
+        )
+        # Compute cached compare objects once per DMD. In self-pairwise mode, X and Y
+        # refer to the same DMD list, so avoid doubling expensive work.
+        cached_x = [
+            self.get_compare_objects(dmd)
+            for dmd in cache_iter(self.dmds[0], "Caching compare objects X")
         ]
+        if ind2 == 0:
+            cached_y = cached_x
+        else:
+            cached_y = [
+                self.get_compare_objects(dmd)
+                for dmd in cache_iter(self.dmds[ind2], "Caching compare objects Y")
+            ]
+
+        self.cached_compare_objects = [cached_x, cached_y]
 
         def compute_similarity(i, j):
             if self.method == "self-pairwise" and j >= i:

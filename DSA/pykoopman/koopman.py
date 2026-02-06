@@ -164,7 +164,7 @@ class Koopman(BaseEstimator):
         if observables is None:
             observables = Identity()
         if regressor is None:
-            regressor = PyDMDRegressor(DMD(svd_rank=2))  # set default svd rank 2
+            regressor = PyDMDRegressor(DMD(svd_rank=-1)) 
         if isinstance(regressor, DMDBase):
             regressor = PyDMDRegressor(regressor)
         elif not isinstance(regressor, (BaseRegressor)):

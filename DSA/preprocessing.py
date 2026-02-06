@@ -244,13 +244,16 @@ def nonlinear_dimensionality_reduction(
 
 
 def featurize_data(
-    data, method="id", pca_downsample=False, pca_n_components=3, **kwargs
+    data, method="id", pca_downsample=False, pca_n_components=3, include_state=False, **kwargs
 ):
     if data.ndim == 3:
         shape = data.shape
         data = data.reshape(-1, data.shape[-1])
     else:
         shape = data.shape
+
+    # Store original data if we need to concatenate it later
+    original_data = data.copy() if include_state else None
 
     if method.lower() == "id":
         pass
@@ -275,6 +278,10 @@ def featurize_data(
 
     if pca_downsample:
         data = pca_reduce(data, n_components=pca_n_components)
+
+    # Concatenate original state if requested
+    if include_state and original_data is not None:
+        data = np.concatenate([data, original_data], axis=-1)
 
     if len(shape) == 3:
         return data.reshape(shape[0], shape[1], -1)
