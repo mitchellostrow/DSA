@@ -23,7 +23,8 @@ dependencies = [
     "tqdm",
     "optht",
     "derivative",
-    "lightning"
+    "lightning",
+    "prettytable"
 ]
 
 [project.optional-dependencies]
