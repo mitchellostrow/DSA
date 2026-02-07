@@ -69,11 +69,13 @@ class SubspaceDMDc(BaseDMD):
         self.rank = rank
         self.backend = backend
 
-    def fit(self):
+    def fit(self,data=None,control_data=None):
         """Fit the SubspaceDMDc model."""
+        data = self.data if data is None else data
+        control_data = self.control_data if data is None else control_data
         self.A_v, self.B_v, self.C_v, self.info = self.subspace_dmdc_multitrial_flexible(
-                                                            y=self.data,
-                                                            u=self.control_data,
+                                                            y=data,
+                                                            u=control_data,
                                                             p=self.n_delays,
                                                             f=self.n_delays,
                                                             n=self.rank, 

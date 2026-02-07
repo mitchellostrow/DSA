@@ -221,12 +221,12 @@ class BaseSweeper(ABC):
                 self._nnormals[i, j] = measure_nonnormality_transpose(A_np)
                 
                 if self.compute_residuals:
-                    try:
-                        rc = ResidualComputer(model, self.test_data)
-                        self._residuals[i, j] = rc.get_average_residual()
-                    except Exception as e:
-                        warnings.warn(f"Residual computation failed: {e}")
-                        self._residuals[i, j] = np.nan
+                    # try:
+                    rc = ResidualComputer(model, self.test_data)
+                    self._residuals[i, j] = rc.get_average_residual()
+                    # except Exception as e:
+                        # warnings.warn(f"Residual computation failed: {e}")
+                        # self._residuals[i, j] = np.nan
                 # except Exception as e:
                     # warnings.warn(f"Failed for {self.param1_name}={p1}, {self.param2_name}={p2}: {e}")
                     # continue

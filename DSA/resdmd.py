@@ -425,8 +425,8 @@ def compute_residuals(
         
         if is_dmdc:
             # Project control into its reduced space
-            Uu = dmd.Uu[:, :rank_input]
-            Su_mat_inv = dmd.Su_mat_inv[:rank_input, :rank_input]
+            Uu = dmd.Uu[:, :rank_input].cpu().numpy()
+            Su_mat_inv = dmd.Su_mat_inv[:rank_input, :rank_input].cpu().numpy()
             U_proj = H_U @ Uu @ Su_mat_inv
             U = U_proj.cpu().detach().numpy() if hasattr(U_proj, "cpu") else U_proj
             

@@ -215,6 +215,7 @@ class DMDc(BaseDMD):
                 self.n = self.data.shape[1]
                 self.ntrials = 1
             self.is_list_data = False
+        
 
     def _check_same_shape(self):
         if isinstance(self.data,(np.ndarray,torch.Tensor)):
@@ -240,7 +241,8 @@ class DMDc(BaseDMD):
             print("Computing Hankel matrices ...")
 
         # Overwrite parameters if provided
-        self.data = self.data if data is None else self._init_data(data, control_data)
+        if data is not None and control_data is not None:
+            self._init_data(data, control_data)
         self.n_delays = self.n_delays if n_delays is None else n_delays
         self.delay_interval = (
             self.delay_interval if delay_interval is None else delay_interval
