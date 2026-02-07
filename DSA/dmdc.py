@@ -122,6 +122,7 @@ class DMDc(BaseDMD):
         self.delay_interval = delay_interval
 
         self.rank_input = rank_input
+        self.rank = rank_input
         self.rank_thresh_input = rank_thresh_input
         self.rank_explained_variance_input = rank_explained_variance_input
         self.rank_output = rank_output
@@ -437,6 +438,7 @@ class DMDc(BaseDMD):
             rank_thresh=rank_thresh_output,
             rank_explained_variance=rank_explained_variance_output,
         )
+        self.rank = self.rank_input
 
     def compute_dmdc(self, lamb=None):
         if self.verbose:
