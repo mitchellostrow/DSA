@@ -222,7 +222,7 @@ class BaseSweeper(ABC):
                 
                 if self.compute_residuals:
                     # try:
-                    rc = ResidualComputer(model, self.test_data)
+                    rc = ResidualComputer(model, self.test_data, self.test_control)
                     self._residuals[i, j] = rc.get_average_residual()
                     # except Exception as e:
                         # warnings.warn(f"Residual computation failed: {e}")

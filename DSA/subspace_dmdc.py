@@ -71,8 +71,9 @@ class SubspaceDMDc(BaseDMD):
 
     def fit(self,data=None,control_data=None):
         """Fit the SubspaceDMDc model."""
-        data = self.data if data is None else data
-        control_data = self.control_data if data is None else control_data
+        if data is None and control_data is None:
+            data = self.data
+            control_data = self.control_data
         self.A_v, self.B_v, self.C_v, self.info = self.subspace_dmdc_multitrial_flexible(
                                                             y=data,
                                                             u=control_data,
