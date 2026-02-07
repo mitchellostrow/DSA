@@ -578,9 +578,11 @@ def compute_residuals_pykoopman(
 
 def compute_residuals_subspace_dmdc(
     model: "SubspaceDMDc",
-    test_data: np.ndarray,
-    control_data: np.ndarray,
+    test_data: np.ndarray = None,
+    control_data: np.ndarray = None,
     return_num_denom: bool = False,
+    use_training_latents: bool = False,
+    projection_method: str = 'smooth',
 ):
     """
     Compute residuals for a fitted SubspaceDMDc model.
@@ -589,12 +591,22 @@ def compute_residuals_subspace_dmdc(
     ----------
     model : SubspaceDMDc
         Fitted SubspaceDMDc model.
-    test_data : np.ndarray
+    test_data : np.ndarray, optional
         Test data (observations). Shape (T, N) or (K, T, N) or list of arrays.
-    control_data : np.ndarray
+        If None and use_training_latents=True, uses training data.
+    control_data : np.ndarray, optional
         Control input data. Must have the same temporal structure as test_data.
+        If None and use_training_latents=True, uses training control data.
     return_num_denom : bool
         Whether to return numerators and denominators.
+    use_training_latents : bool, default=False
+        If True, uses the exact latent states from training (stored in model.info['X_hat']).
+        This should give near-zero residuals for training data since A was fit to these states.
+        If False, projects test_data to latent space using Kalman filtering/smoothing.
+    projection_method : str, default='smooth'
+        Method for projecting observations to latent states (only used if use_training_latents=False):
+        - 'smooth': Kalman smoothing (uses all observations, better estimates)
+        - 'filter': Kalman filtering (causal, uses only past observations)
     
     Returns
     -------
@@ -615,88 +627,33 @@ def compute_residuals_subspace_dmdc(
         y_t = C @ x_t
     
     Residuals are computed in the latent space by:
-    1. Projecting new observations to latent states via the oblique projection
+    1. Projecting observations to latent states via Kalman smoothing/filtering
     2. Subtracting control effects: X_next_corrected = X_next - B @ U
     3. Computing residuals on (X, X_next_corrected) using the A matrix eigenstructure
     """
-    if control_data is None:
-        raise ValueError("control_data is required for SubspaceDMDc residual computation.")
-    
-    # Convert to numpy if needed
-    if isinstance(test_data, torch.Tensor):
-        test_data = test_data.cpu().numpy()
-    if isinstance(control_data, torch.Tensor):
-        control_data = control_data.cpu().numpy()
-    
     # Get model parameters
-    p = model.n_delays  # past window
-    f = model.info.get('f', p)  # future window (usually same as p)
     rank = model.info['rank_used']
-    
-    # Get projection matrices from the model
-    Gamma_hat = model.info['Gamma_hat']  # (f*p_out, rank)
-    
-    # Get A and B matrices
     A = model.A_v
     B = model.B_v
     
-    # Convert data to list format for processing
-    y_list, u_list = model._convert_to_subspace_dmdc_data_format(test_data, control_data)
-    
-    # Collect Hankel data using the same method as fitting
-    # This gives us the properly aligned data for projection
-    try:
-        U_p, Y_p, U_f, Y_f, Z_p, valid_trials, T_per_trial, T_total, p_out, m = \
-            model._collect_data(y_list, u_list, p, f)
-    except ValueError as e:
-        raise ValueError(f"Failed to process test data for residuals: {e}")
-    
-    # Project to latent space using oblique projection
-    # Following the subspace identification approach:
-    # 1. Compute the oblique projection O = Y_f @ Pi_perp @ pinv(Z_p @ Pi_perp)
-    # 2. SVD of O gives us U_n, S_n, V_n  
-    # 3. X_hat = S_half @ V_n projects the data to latent space
-    #
-    # For new data, we use the Gamma_hat to project:
-    # X_hat_new = pinv(Gamma_hat) @ Y_f_new (approximately)
-    
-    # Compute pseudo-inverse of Gamma_hat for projection
-    Gamma_pinv = np.linalg.pinv(Gamma_hat)  # (rank, f*p_out)
-    
-    # Project Y_f to latent space
-    X_hat = Gamma_pinv @ Y_f  # (rank, T_total)
-    
-    # Time-align the latent states for regression
-    # X_hat[:, t] corresponds to time t, we need X[t] and X[t+1] pairs
-    # Also need U at time t
-    X_segments = []
-    X_next_segments = []
-    U_segments = []
-    
-    start_idx = 0
-    for trial_idx, T_trial in enumerate(T_per_trial):
-        X_trial = X_hat[:, start_idx:start_idx + T_trial]
+    if use_training_latents:
+        # Use the exact latent states from training - should give near-zero residuals
+        X, X_next, U = model.get_training_latent_states(return_aligned=True)
+    else:
+        if control_data is None:
+            raise ValueError("control_data is required for SubspaceDMDc residual computation.")
         
-        # Current and next states
-        X_trial_curr = X_trial[:, :-1]
-        X_trial_next = X_trial[:, 1:]
+        # Convert to numpy if needed
+        if isinstance(test_data, torch.Tensor):
+            test_data = test_data.cpu().numpy()
+        if isinstance(control_data, torch.Tensor):
+            control_data = control_data.cpu().numpy()
         
-        # Get control input aligned with current state
-        original_trial_idx = valid_trials[trial_idx]
-        U_trial = u_list[original_trial_idx]
-        # U_trial is (n_timepoints, n_features), extract the aligned portion
-        U_mid_trial = U_trial[p:p + (T_trial - 1), :].T  # (m, T_trial-1)
-        
-        X_segments.append(X_trial_curr)
-        X_next_segments.append(X_trial_next)
-        U_segments.append(U_mid_trial)
-        
-        start_idx += T_trial
-    
-    # Concatenate across trials
-    X = np.concatenate(X_segments, axis=1).T  # (T_total-n_trials, rank)
-    X_next = np.concatenate(X_next_segments, axis=1).T  # (T_total-n_trials, rank)
-    U = np.concatenate(U_segments, axis=1).T  # (T_total-n_trials, m)
+        # Project test data to latent space using Kalman filtering/smoothing
+        # Returns time-aligned (X, X_next, U) in row-major format
+        X, X_next, U = model.project_to_latent(
+            test_data, control_data, return_aligned=True, method=projection_method
+        )
     
     # Subtract control effects: X_next_corrected = X_next - B @ U.T
     Y_corrected = _subtract_control_effects(X_next, B, U)
