@@ -478,6 +478,125 @@ class SubspaceDMDc(BaseDMD):
             return self.subspace_dmdc_multitrial_custom(y_list, u_list, p, f, n, lamb, energy)
 
 
+    def get_training_latent_states(self, return_aligned=True):
+        """
+        Get the latent states from training data.
+        
+        Parameters
+        ----------
+        return_aligned : bool, default=True
+            If True, returns time-aligned (X, X_next, U) triplets.
+            If False, returns raw X_hat matrix.
+        
+        Returns
+        -------
+        If return_aligned=True:
+            X : np.ndarray, shape (T_total, rank)
+                Current latent states (row-major format).
+            X_next : np.ndarray, shape (T_total, rank)
+                Next latent states (row-major format).
+            U : np.ndarray, shape (T_total, m)
+                Control inputs aligned with X (row-major format).
+        If return_aligned=False:
+            X_hat : np.ndarray, shape (rank, T_total)
+                Raw latent states from training.
+        """
+        X_hat = self.info['X_hat']
+        
+        if not return_aligned:
+            return X_hat
+        
+        # Need to re-align using stored info
+        p = self.n_delays
+        valid_trials = self.info['valid_trials']
+        T_per_trial = self.info['T_per_trial']
+        
+        # Get training data in list format
+        y_list, u_list = self._convert_to_subspace_dmdc_data_format(self.data, self.control_data)
+        
+        X, X_next, U, _ = self._time_align_valid_trials(
+            X_hat, u_list, y_list, valid_trials, T_per_trial, p
+        )
+        
+        return X.T, X_next.T, U.T
+
+    def project_to_latent(self, test_data, control_data, return_aligned=True, method='smooth'):
+        """
+        Project new observations to latent states using Kalman filtering/smoothing.
+        
+        This method uses the learned state-space model (A, B, C) to infer latent
+        states from observations, which projects into the same latent space as training.
+        
+        Parameters
+        ----------
+        test_data : np.ndarray or list
+            Test observations. Shape (T, N), (K, T, N), or list of (T_k, N) arrays.
+        control_data : np.ndarray or list
+            Control inputs. Must have the same structure as test_data.
+        return_aligned : bool, default=True
+            If True, returns time-aligned (X, X_next, U) triplets ready for dynamics.
+            If False, returns raw latent states per trial.
+        method : str, default='smooth'
+            'filter' - use Kalman filtering (causal, uses only past observations)
+            'smooth' - use Kalman smoothing (non-causal, uses all observations)
+        
+        Returns
+        -------
+        If return_aligned=True:
+            X : np.ndarray, shape (T_total, rank)
+                Current latent states (row-major format).
+            X_next : np.ndarray, shape (T_total, rank)
+                Next latent states (row-major format).
+            U : np.ndarray, shape (T_total, m)
+                Control inputs aligned with X (row-major format).
+        If return_aligned=False:
+            x_latents : list of np.ndarray
+                Latent states for each trial, each shape (T_trial, rank).
+        """
+        # Convert to list format for consistent processing
+        y_list, u_list = self._convert_to_subspace_dmdc_data_format(test_data, control_data)
+        
+        X_all = []
+        X_next_all = []
+        U_all = []
+        x_latents_all = []
+        
+        for trial_idx, (y_trial, u_trial) in enumerate(zip(y_list, u_list)):
+            T_trial = y_trial.shape[0]
+            
+            # Run Kalman filter forward pass
+            kalman = OnlineKalman(self)
+            for t in range(T_trial):
+                kalman.step(y=y_trial[t], u=u_trial[t])
+            
+            # Get latent states
+            if method == 'smooth':
+                # Run backward smoothing pass
+                x_smoothed, _ = kalman.smooth()
+                # Stack into (T, rank) array
+                x_latent = np.hstack(x_smoothed).T  # (T, rank)
+            else:
+                # Use filtered states
+                x_latent = np.hstack(kalman.x_filtereds).T  # (T, rank)
+            
+            x_latents_all.append(x_latent)
+            
+            if return_aligned:
+                # Create (X[t], X[t+1], U[t]) triplets
+                X_all.append(x_latent[:-1])      # (T-1, rank)
+                X_next_all.append(x_latent[1:])  # (T-1, rank)
+                U_all.append(u_trial[:-1])       # (T-1, m)
+        
+        if not return_aligned:
+            return x_latents_all
+        
+        # Concatenate across trials
+        X = np.concatenate(X_all, axis=0)
+        X_next = np.concatenate(X_next_all, axis=0)
+        U = np.concatenate(U_all, axis=0)
+        
+        return X, X_next, U
+
     def predict(self, test_data=None, control_data=None, reseed=None):
         """Predict using the Kalman filter."""
         if test_data is None:
@@ -629,3 +748,64 @@ class OnlineKalman:
             'y_predicteds': self.y_predicteds,
             'kalman_gains': self.kalman_gains
         }
+
+    def smooth(self, reg_coef=1e-6):
+        """
+        Perform RTS (Rauch-Tung-Striebel) smoothing on the filtered states.
+        
+        This is the backward pass that uses future observations to improve
+        state estimates. Must be called after running the forward filter pass.
+        
+        Parameters
+        ----------
+        reg_coef : float
+            Regularization coefficient for numerical stability.
+        
+        Returns
+        -------
+        x_smoothed : list of np.ndarray
+            Smoothed state estimates, shape (x_dim, 1) each.
+        p_smoothed : list of np.ndarray
+            Smoothed covariance estimates.
+        """
+        if len(self.x_filtereds) == 0:
+            raise ValueError("Must run forward filter pass before smoothing.")
+        
+        T = len(self.x_filtereds)
+        
+        # Initialize with final filtered state
+        x_smoothed = [None] * T
+        p_smoothed = [None] * T
+        x_smoothed[-1] = self.x_filtereds[-1].copy()
+        p_smoothed[-1] = self.p_filtereds[-1].copy()
+        
+        # Backward pass
+        for t in range(T - 2, -1, -1):
+            # Get filtered and predicted values at time t
+            x_filt_t = self.x_filtereds[t]
+            p_filt_t = self.p_filtereds[t]
+            
+            # Predicted values for t+1 (computed during forward pass at time t)
+            # p_predicteds[t] is P_{t+1|t} computed after processing observation t
+            p_pred_tp1 = self.p_predicteds[t]
+            
+            # Regularize for numerical stability
+            p_pred_tp1_reg = p_pred_tp1 + reg_coef * np.eye(self.x_dim)
+            
+            # Smoother gain: J_t = P_{t|t} @ A^T @ P_{t+1|t}^{-1}
+            J_t = p_filt_t @ self.A.T @ np.linalg.pinv(p_pred_tp1_reg)
+            
+            # x_{t+1|t} = A @ x_{t|t} + B @ u_t
+            x_pred_tp1 = self.A @ x_filt_t + self.B @ self.us[t]
+            
+            # Smoothed state: x_{t|T} = x_{t|t} + J_t @ (x_{t+1|T} - x_{t+1|t})
+            x_smoothed[t] = x_filt_t + J_t @ (x_smoothed[t + 1] - x_pred_tp1)
+            
+            # Smoothed covariance: P_{t|T} = P_{t|t} + J_t @ (P_{t+1|T} - P_{t+1|t}) @ J_t^T
+            p_smoothed[t] = p_filt_t + J_t @ (p_smoothed[t + 1] - p_pred_tp1) @ J_t.T
+            p_smoothed[t] = self._regularize_and_symmetrize(p_smoothed[t], reg_coef)
+        
+        self.x_smoothed = x_smoothed
+        self.p_smoothed = p_smoothed
+        
+        return x_smoothed, p_smoothed
