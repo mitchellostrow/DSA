@@ -227,7 +227,7 @@ class Koopman(BaseEstimator):
         if y is None:  # or isinstance(self.regressor, PyDMDRegressor):
             # if there is only 1 trajectory OR regressor is PyDMD
             y_flag = True
-            x, y = self.split_xy(x, offset=True)
+            x, y, u = self.split_xy(x, u=u, offset=True)
             
             if isinstance(self.regressor, HAVOK):
                 regressor = self.regressor
@@ -681,8 +681,7 @@ class Koopman(BaseEstimator):
         # the _regressor.fit to update the model coefficients.
         # call this function with _regressor()
         return self._pipeline.steps[2][1]
-
-    def split_xy(self, X, offset=True):
+    def split_xy(self, X, u=None, offset=True):
         """
         Split data into X and Y pairs with temporal offset.
         
@@ -692,15 +691,16 @@ class Koopman(BaseEstimator):
         
         Args:
             X: Input data (1D, 2D array, 3D array, or list of arrays)
+            u: Control input (same shape as X), optional
             offset: If True, split with temporal offset X[:-1], X[1:]
-                    If False, return (X, X) - used when Y provided separately
+                    If False, return (X, X, u) - used when Y provided separately
         
         Returns:
-            Tuple (X_split, Y_split) preserving input structure
+            Tuple (X_split, Y_split, u_split) preserving input structure
         """
         if not offset:
             # No split needed when Y provided separately
-            return X, X
+            return X, X, u
         
         s1, s2 = -1, 1  # X[:-1], X[1:]
         
@@ -711,21 +711,26 @@ class Koopman(BaseEstimator):
             if X.ndim == 2:
                 self.n_samples_, self.n_input_features_ = X.shape
                 self.n_trials_ = 1
-                return X[:s1], X[s2:]
+                u_split = u[:s1] if u is not None else None
+                return X[:s1], X[s2:], u_split
             
             elif X.ndim == 3:
                 self.n_trials_, self.n_samples_, self.n_input_features_ = X.shape
                 # Keep 3D structure: (trials, time-1, features)
-                return X[:, :s1, :], X[:, s2:, :]
+                u_split = u[:, :s1, :] if u is not None else None
+                return X[:, :s1, :], X[:, s2:, :], u_split
         
         elif isinstance(X, list):
             # Recursively process each element in list
-            X_list, Y_list = [], []
-            for x in X:
-                x_split, y_split = self.split_xy(x, offset=offset)
+            X_list, Y_list, u_list = [], [], []
+            for i, x in enumerate(X):
+                u_elem = u[i] if u is not None else None
+                x_split, y_split, u_split = self.split_xy(x, u=u_elem, offset=offset)
                 X_list.append(x_split)
                 Y_list.append(y_split)
-            return X_list, Y_list
+                u_list.append(u_split)
+            u_result = u_list if u is not None else None
+            return X_list, Y_list, u_result
         
         # Fallback for unknown types
-        return X, X
+        return X, X, u

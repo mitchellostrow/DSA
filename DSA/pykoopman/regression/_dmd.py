@@ -73,9 +73,23 @@ class PyDMDRegressor(BaseRegressor):
             raise ValueError("regressor must be a subclass of DMDBase from pydmd.")
         self.regressor = regressor
         # super(PyDMDRegressor, self).__init__(regressor)
-        self.tlsq_rank = regressor._tlsq_rank
-        self.svd_rank = regressor._Atilde._svd_rank
-        self.forward_backward = regressor._Atilde._forward_backward
+        if hasattr(regressor, '_tslsq_rank'):
+            self.tlsq_rank = regressor._tlsq_rank
+        elif hasattr(regressor, '_dmd_operator_kwargs'):
+            self.tlsq_rank = regressor._dmd_operator_kwargs['tlsq_rank']
+        else:
+            raise ValueError("can't find tlsq_rank")
+        
+        if hasattr(regressor, '_svd_rank'):
+            self.svd_rank = regressor._Atilde._svd_rank
+        elif hasattr(regressor, '_dmd_operator_kwargs'):
+            self.svd_rank = regressor._dmd_operator_kwargs['svd_rank']
+        else:
+            raise ValueError("can't find svd_rank")
+        if regressor._Atilde is not None:
+            self.forward_backward = regressor._Atilde._forward_backward
+        else:
+            self.forward_backward = False
         self.tikhonov_regularization = tikhonov_regularization
         self.flag_xy = False
         self._ur = None
