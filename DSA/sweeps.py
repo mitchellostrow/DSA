@@ -514,7 +514,8 @@ class PyKoopmanSweeper(BaseSweeper):
     allowing sweeps over both observable parameters (e.g., time delays) and
     regressor parameters (e.g., SVD rank). Parameters are specified using
     dotted notation: "component.parameter" where component is "observables"
-    (or "observable", "obs") or "regressor" (or "reg").
+    (or "observable", "obs"), "regressor" (or "reg"), or "extra_obs.{index}"
+    for extra observables.
     
     Parameters
     ----------
@@ -522,7 +523,10 @@ class PyKoopmanSweeper(BaseSweeper):
         Input data for the sweep. See `BaseSweeper` for details.
     param1_name : str, optional
         Name of the first parameter in "component.param" format
-        (default: "observables.n_delays").
+        (default: "observables.n_delays"). Supported components:
+        - "observables", "observable", "obs": base observable parameters
+        - "regressor", "reg": regressor parameters
+        - "extra_obs.{index}": extra observable parameters (e.g., "extra_obs.0.D")
     param1_values : list or np.ndarray, optional
         Values to sweep for the first parameter.
     param2_name : str, optional
@@ -540,7 +544,14 @@ class PyKoopmanSweeper(BaseSweeper):
     base_regressor_kwargs : dict, optional
         Additional kwargs for the regressor constructor.
     extra_observables : list, optional
-        Additional observable objects to combine with the base observable.
+        Additional observable objects or classes to combine with the base observable.
+        Can be a mix of:
+        - Observable instances (fixed, not swept)
+        - Observable classes (can be swept via "extra_obs.{index}.param" syntax)
+    extra_observable_kwargs : list of dict, optional
+        Default kwargs for each extra observable class. Only used when the
+        corresponding entry in extra_observables is a class (not an instance).
+        Length must match extra_observables.
     control_data : np.ndarray, optional
         Control/actuation data for controlled systems.
     **kwargs
@@ -559,6 +570,18 @@ class PyKoopmanSweeper(BaseSweeper):
     ... )
     >>> sweeper.sweep()
     >>> sweeper.plot()
+    
+    >>> # Sweep TimeDelay n_delays and RandomFourierFeatures D
+    >>> sweeper = PyKoopmanSweeper(
+    ...     data=X,
+    ...     param1_name="obs.n_delays",
+    ...     param1_values=[3, 5, 7],
+    ...     param2_name="extra_obs.0.D",
+    ...     param2_values=[50, 100, 200],
+    ...     base_observable_class=pk.observables.TimeDelay,
+    ...     extra_observables=[pk.observables.RandomFourierFeatures],  # class, not instance
+    ...     extra_observable_kwargs=[{"include_state": True}],  # default kwargs
+    ... )
     
     >>> # With control input
     >>> import pykoopman as pk
@@ -582,6 +605,7 @@ class PyKoopmanSweeper(BaseSweeper):
     The component names in param1_name/param2_name are flexible:
     - For observables: "observable", "observables", or "obs"
     - For regressor: "regressor" or "reg"
+    - For extra observables: "extra_obs.{index}" (e.g., "extra_obs.0", "extra_obs.1")
     """
     
     def __init__(
@@ -595,7 +619,8 @@ class PyKoopmanSweeper(BaseSweeper):
         base_observable_kwargs: dict = None,
         base_regressor_class=None,
         base_regressor_kwargs: dict = None,
-        extra_observables: list = None,
+        extra_observables: Union[List,Any] = None,
+        extra_observable_kwargs: List[dict] = None,
         control_data: np.ndarray = None,
         **kwargs
     ):
@@ -608,6 +633,16 @@ class PyKoopmanSweeper(BaseSweeper):
         self.base_regressor_class = base_regressor_class
         self.base_regressor_kwargs = base_regressor_kwargs or {}
         self.extra_observables = extra_observables or []
+        if not isinstance(self.extra_observables, list):
+            self.extra_observables = [self.extra_observables]
+        self.extra_observable_kwargs = extra_observable_kwargs or [{} for _ in self.extra_observables]
+        
+        # Validate extra_observable_kwargs length
+        if len(self.extra_observable_kwargs) != len(self.extra_observables):
+            raise ValueError(
+                f"extra_observable_kwargs length ({len(self.extra_observable_kwargs)}) must match "
+                f"extra_observables length ({len(self.extra_observables)})"
+            )
         
         # Warn if the regressor class doesn't support control input
         if control_data is not None and base_regressor_class is not None:
@@ -619,8 +654,17 @@ class PyKoopmanSweeper(BaseSweeper):
                     UserWarning
                 )
         
-        self._param1_component, self._param1_attr = param1_name.split('.')
-        self._param2_component, self._param2_attr = param2_name.split('.')
+        # Parse parameter names into components
+        self._param1_parsed = self._parse_param_name(param1_name)
+        self._param2_parsed = self._parse_param_name(param2_name)
+        # Keep legacy attributes for backward compatibility
+        self._param1_component, self._param1_attr = param1_name.split('.', 1)
+        self._param2_component, self._param2_attr = param2_name.split('.', 1)
+        # Handle extra_obs.N.param format for legacy attrs
+        if self._param1_parsed['type'] == 'extra_obs':
+            self._param1_attr = self._param1_parsed['attr']
+        if self._param2_parsed['type'] == 'extra_obs':
+            self._param2_attr = self._param2_parsed['attr']
     
     def _is_control_model_class(self, model_class) -> bool:
         """Check if a model/regressor class supports control input.
@@ -644,24 +688,113 @@ class PyKoopmanSweeper(BaseSweeper):
         """Check if a component name refers to regressor."""
         return component in ("regressor", "reg")
     
+    @staticmethod
+    def _is_extra_obs_component(component: str) -> bool:
+        """Check if a component name refers to extra observables."""
+        return component.startswith("extra_obs")
+    
+    def _parse_param_name(self, param_name: str) -> dict:
+        """Parse a parameter name into its components.
+        
+        Handles formats:
+        - "obs.n_delays" -> {'type': 'observable', 'attr': 'n_delays', 'index': None}
+        - "reg.svd_rank" -> {'type': 'regressor', 'attr': 'svd_rank', 'index': None}
+        - "extra_obs.0.D" -> {'type': 'extra_obs', 'attr': 'D', 'index': 0}
+        
+        Args:
+            param_name: Parameter name in dotted notation.
+            
+        Returns:
+            Dict with 'type', 'attr', and 'index' keys.
+        """
+        parts = param_name.split('.')
+        
+        if len(parts) < 2:
+            raise ValueError(f"Invalid parameter name: {param_name}. Expected 'component.param' format.")
+        
+        component = parts[0]
+        
+        if self._is_observable_component(component):
+            return {'type': 'observable', 'attr': parts[1], 'index': None}
+        elif self._is_regressor_component(component):
+            return {'type': 'regressor', 'attr': parts[1], 'index': None}
+        elif self._is_extra_obs_component(component):
+            # Format: "extra_obs.{index}.{attr}" or "extra_obs{index}.{attr}"
+            if len(parts) == 3:
+                # "extra_obs.0.D"
+                try:
+                    index = int(parts[1])
+                except ValueError:
+                    raise ValueError(f"Invalid extra_obs index in: {param_name}. Expected integer.")
+                return {'type': 'extra_obs', 'attr': parts[2], 'index': index}
+            elif len(parts) == 2:
+                # Try "extra_obs0.D" format
+                import re
+                match = re.match(r'extra_obs(\d+)', component)
+                if match:
+                    return {'type': 'extra_obs', 'attr': parts[1], 'index': int(match.group(1))}
+                raise ValueError(f"Invalid extra_obs format: {param_name}. Use 'extra_obs.N.param' or 'extra_obsN.param'.")
+            else:
+                raise ValueError(f"Invalid extra_obs format: {param_name}. Use 'extra_obs.N.param'.")
+        else:
+            raise ValueError(f"Unknown component: {component}. Expected 'obs', 'reg', or 'extra_obs'.")
+            
+    @staticmethod
+    def _cast_to_int(val):
+        return int(val) if isinstance(val, np.integer) else val
+
     def _build_observable(self, p1_val, p2_val):
+        """Build the composite observable with swept parameters.
+        
+        Args:
+            p1_val: Value for param1.
+            p2_val: Value for param2.
+            
+        Returns:
+            Combined observable (base + extras).
+        """
+        # Build base observable
         kwargs = dict(self.base_observable_kwargs)
-        if self._is_observable_component(self._param1_component):
-            kwargs[self._param1_attr] = p1_val
-        if self._is_observable_component(self._param2_component):
-            kwargs[self._param2_attr] = p2_val
+        if self._param1_parsed['type'] == 'observable':
+            kwargs[self._param1_parsed['attr']] = self._cast_to_int(p1_val)
+        if self._param2_parsed['type'] == 'observable':
+            kwargs[self._param2_parsed['attr']] = self._cast_to_int(p2_val)
         obs = self.base_observable_class(**kwargs)
-        for extra in self.extra_observables:
-            obs = obs + extra
+
+        # Build and add extra observables
+        for i, extra in enumerate(self.extra_observables):
+            extra_kwargs = dict(self.extra_observable_kwargs[i])
+            
+            # Check if param1 targets this extra observable
+            if self._param1_parsed['type'] == 'extra_obs' and self._param1_parsed['index'] == i:
+                extra_kwargs[self._param1_parsed['attr']] = p1_val
+            # Check if param2 targets this extra observable
+            if self._param2_parsed['type'] == 'extra_obs' and self._param2_parsed['index'] == i:
+                extra_kwargs[self._param2_parsed['attr']] = p2_val
+            
+            # Build extra observable: if it's a class, instantiate it; if instance, use as-is
+            if isinstance(extra, type):
+                # It's a class, instantiate with kwargs
+                extra_obs = extra(**extra_kwargs)
+            else:
+                # It's already an instance
+                if extra_kwargs:
+                    warnings.warn(
+                        f"extra_observables[{i}] is an instance, not a class. "
+                        f"Cannot apply swept parameters. Pass a class instead to sweep its parameters.",
+                        UserWarning
+                    )
+                extra_obs = extra
+            
+            obs = obs + extra_obs
         return obs
     
     def _build_regressor(self, p1_val, p2_val):
         kwargs = dict(self.base_regressor_kwargs)
-        cast_to_int = lambda val: int(val) if isinstance(val, np.integer) else val
         if self._is_regressor_component(self._param1_component):
-            kwargs[self._param1_attr] = cast_to_int(p1_val)
+            kwargs[self._param1_attr] = self._cast_to_int(p1_val)
         if self._is_regressor_component(self._param2_component):
-            kwargs[self._param2_attr] = cast_to_int(p2_val)
+            kwargs[self._param2_attr] = self._cast_to_int(p2_val)
         if self.base_regressor_class:
             # Return the regressor instance directly - pk.Koopman handles pydmd regressors
             return self.base_regressor_class(**kwargs)
