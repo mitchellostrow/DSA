@@ -143,7 +143,9 @@ class SimilarityTransformDist:
         verbose=False,
         eps=1e-5,
         rescale_wasserstein=False,
-        compare: Final = 'state'
+        compare: Final = 'state',
+        differentiable=False,
+        sinkhorn_reg=0.1,
     ):
         """
         Parameters
@@ -166,8 +168,15 @@ class SimilarityTransformDist:
 
         eps : float
             early stopping threshold
-        
+
         compare : str (final). dummy variable for inference of types / config
+
+        differentiable : bool
+            If True, use ot.sinkhorn2 instead of ot.emd/ot.emd2 for Wasserstein
+            distance, enabling gradient flow through the score.
+
+        sinkhorn_reg : float
+            Entropy regularization for Sinkhorn (only used when differentiable=True).
         """
 
         self.iters = iters
@@ -182,6 +191,8 @@ class SimilarityTransformDist:
         self.rescale_wasserstein = rescale_wasserstein
         self.wasserstein_compare = 'eig' # for backwards compatibility
         self.compare = compare
+        self.differentiable = differentiable
+        self.sinkhorn_reg = sinkhorn_reg
 
     def fit(
         self,
@@ -277,14 +288,21 @@ class SimilarityTransformDist:
                 )
             a, b = a.to(device), b.to(device)
 
-            self.C_star = ot.emd(a, b, self.M)
-            self.score_star = (
-                ot.emd2(a, b, self.M) #* a.shape[0]
-            )  # add scaling factor due to random matrix theory
-            # self.score_star = np.sum(self.C_star * self.M)
-            self.C_star = self.C_star / torch.linalg.norm(
-                self.C_star, dim=1, keepdim=True
-            )
+            if self.differentiable:
+                self.score_star = ot.sinkhorn2(
+                    a, b, self.M, reg=self.sinkhorn_reg
+                )
+                # No transport plan needed for differentiable mode
+                self.C_star = None
+            else:
+                self.C_star = ot.emd(a, b, self.M)
+                self.score_star = (
+                    ot.emd2(a, b, self.M) #* a.shape[0]
+                )  # add scaling factor due to random matrix theory
+                # self.score_star = np.sum(self.C_star * self.M)
+                self.C_star = self.C_star / torch.linalg.norm(
+                    self.C_star, dim=1, keepdim=True
+                )
             # wasserstein_distance(A.cpu().numpy(),B.cpu().numpy())
 
         else:
@@ -404,14 +422,15 @@ class SimilarityTransformDist:
         score : float
             similarity of the data under the similarity transform w.r.t C
         """
-        assert self.C_star is not None
         A = self.A if A is None else A
         B = self.B if B is None else B
         assert A is not None
         assert B is not None
-        assert A.shape == self.C_star.shape or score_method == "wasserstein"
-        assert B.shape == self.C_star.shape or score_method == "wasserstein"
         score_method = self.score_method if score_method is None else score_method
+        if score_method != "wasserstein":
+            assert self.C_star is not None
+            assert A.shape == self.C_star.shape
+            assert B.shape == self.C_star.shape
         with torch.no_grad():
             if not isinstance(A, torch.Tensor):
                 A = torch.from_numpy(A).float().to(self.device)
@@ -435,8 +454,10 @@ class SimilarityTransformDist:
         elif score_method == "wasserstein":
             # use the current C_star to compute the score
             assert hasattr(self, "score_star")
-            # if wasserstein_compare == self.wasserstein_compare:
-            score = self.score_star.item()
+            if self.differentiable:
+                score = self.score_star  # keep as tensor for gradient flow
+            else:
+                score = self.score_star.item()
             # non-eig wasserstein comparisons are deprecated until theoretically validated
             # else:
             #     #apply the current transport plan to the new data
