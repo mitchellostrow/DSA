@@ -12,7 +12,6 @@ from DSA.sweeps import (
     sweep_ranks_delays,
     split_train_test,
 )
-from DSA.dmd import DMD
 
 
 # =============================================================================

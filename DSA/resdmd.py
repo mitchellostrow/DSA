@@ -13,16 +13,16 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import cm
 from matplotlib import colors as mcolors
-from typing import Literal, Optional, Tuple, Union
+from typing import Literal, Tuple
 
 try:
     from .dmd import DMD, embed_signal_torch
-    from .dmdc import DMDc, embed_data_DMDc
+    from .dmdc import embed_data_DMDc
     from .subspace_dmdc import SubspaceDMDc
 except ImportError:
     from dmd import DMD, embed_signal_torch
     try:
-        from dmdc import DMDc, embed_data_DMDc
+        from dmdc import embed_data_DMDc
         from subspace_dmdc import SubspaceDMDc
     except ImportError:
         DMDc = None
@@ -57,12 +57,8 @@ def _requires_control(model) -> bool:
     
     # PyKoopman with control (check via B property)
     if hasattr(model, '_pipeline'):
-        try:
-            B = model.B
-            if B is not None:
-                return True
-        except (AttributeError, ValueError):
-            pass
+        if getattr(model, 'B', None) is not None:
+            return True
     
     return False
 
@@ -180,7 +176,6 @@ def _compute_residuals_from_matrices(
     Y: np.ndarray,
     eigenvalues: np.ndarray,
     eigenvectors: np.ndarray,
-    return_num_denom: bool = False,
 ) -> Tuple:
     """
     Core residual computation from projected data matrices and eigendecomposition.
@@ -197,8 +192,6 @@ def _compute_residuals_from_matrices(
         Eigenvalues of the state matrix. Shape (rank,).
     eigenvectors : np.ndarray
         Eigenvectors of the state matrix. Shape (rank, rank).
-    return_num_denom : bool
-        Whether to return numerators and denominators.
     
     Returns
     -------
@@ -206,10 +199,6 @@ def _compute_residuals_from_matrices(
         Residuals for each eigenpair.
     normalized_residuals : np.ndarray
         Normalized residuals (relative to persistence baseline).
-    numerators : list (optional)
-        If return_num_denom=True.
-    denominators : list (optional)
-        If return_num_denom=True.
     """
     rank = len(eigenvalues)
     
@@ -221,8 +210,6 @@ def _compute_residuals_from_matrices(
     
     residuals = np.zeros(rank, dtype=np.complex128)
     persistence_residuals = np.zeros(rank, dtype=np.complex128)
-    numerators = []
-    denominators = []
     
     for i in range(rank):
         g = eigenvectors[:, i]
@@ -237,8 +224,6 @@ def _compute_residuals_from_matrices(
             ),
         )
         residuals[i] = numerator / denominator
-        numerators.append(np.real(numerator))
-        denominators.append(np.real(denominator))
         
         # Persistence baseline (lambda = 1)
         persistence_numerator = np.dot(
@@ -248,10 +233,7 @@ def _compute_residuals_from_matrices(
     
     normalized_residuals = np.abs(residuals) / (np.abs(persistence_residuals) + 1e-10)
     
-    if return_num_denom:
-        return residuals, normalized_residuals, numerators, denominators
-    else:
-        return residuals, normalized_residuals
+    return residuals, normalized_residuals
 
 
 def compute_residuals(
@@ -260,7 +242,6 @@ def compute_residuals(
     Y: "np.ndarray | torch.Tensor" = None,
     control_data: "np.ndarray | torch.Tensor" = None,
     matrix: Literal["A_v", "A_havok_dmd"] = "A_v",
-    return_num_denom: bool = False,
 ):
     """
     Compute DMD eigenvalues, eigenvectors, and residuals for each mode.
@@ -280,8 +261,6 @@ def compute_residuals(
         structure as data (same number of time points and trials).
     matrix : Literal["A_v", "A_havok_dmd"], optional
         Matrix to compute residuals on. Must be either "A_v" or "A_havok_dmd". Default is "A_v".
-    return_num_denom : bool, optional
-        Whether to return the numerator and denominator of the residual. Default is False.
 
     Returns
     -------
@@ -293,8 +272,6 @@ def compute_residuals(
         Residuals for each eigenpair.
     normalized_residuals : np.ndarray
         Normalized residuals.
-    numerators, denominators : list (optional)
-        If return_num_denom=True.
     
     Notes
     -----
@@ -445,23 +422,17 @@ def compute_residuals(
     eigenvectors = eigenvectors[:, :rank]
 
     # Use shared core computation
-    result = _compute_residuals_from_matrices(
-        X, Y, eigenvalues, eigenvectors, return_num_denom
+    residuals, normalized_residuals = _compute_residuals_from_matrices(
+        X, Y, eigenvalues, eigenvectors
     )
     
-    if return_num_denom:
-        residuals, normalized_residuals, numerators, denominators = result
-        return eigenvalues, eigenvectors, residuals, normalized_residuals, numerators, denominators
-    else:
-        residuals, normalized_residuals = result
-        return eigenvalues, eigenvectors, residuals, normalized_residuals
+    return eigenvalues, eigenvectors, residuals, normalized_residuals
 
 
 def compute_residuals_pykoopman(
     model,
     test_data: np.ndarray,
     control_data: np.ndarray = None,
-    return_num_denom: bool = False,
 ):
     """
     Compute residuals for a fitted PyKoopman model.
@@ -475,8 +446,6 @@ def compute_residuals_pykoopman(
     control_data : np.ndarray, optional
         Control input data. Required for models with control (DMDc, EDMDc, PyDMD DMDc).
         Must have the same temporal structure as test_data.
-    return_num_denom : bool
-        Whether to return numerators and denominators.
     
     Returns
     -------
@@ -564,23 +533,17 @@ def compute_residuals_pykoopman(
     eigenvectors = eigenvectors[:, :rank]
     
     # Use shared core computation
-    result = _compute_residuals_from_matrices(
-        X, Y, eigenvalues, eigenvectors, return_num_denom
+    residuals, normalized_residuals = _compute_residuals_from_matrices(
+        X, Y, eigenvalues, eigenvectors
     )
     
-    if return_num_denom:
-        residuals, normalized_residuals, numerators, denominators = result
-        return eigenvalues, eigenvectors, residuals, normalized_residuals, numerators, denominators
-    else:
-        residuals, normalized_residuals = result
-        return eigenvalues, eigenvectors, residuals, normalized_residuals
+    return eigenvalues, eigenvectors, residuals, normalized_residuals
 
 
 def compute_residuals_subspace_dmdc(
     model: "SubspaceDMDc",
     test_data: np.ndarray = None,
     control_data: np.ndarray = None,
-    return_num_denom: bool = False,
     use_training_latents: bool = False,
     projection_method: str = 'smooth',
 ):
@@ -597,8 +560,6 @@ def compute_residuals_subspace_dmdc(
     control_data : np.ndarray, optional
         Control input data. Must have the same temporal structure as test_data.
         If None and use_training_latents=True, uses training control data.
-    return_num_denom : bool
-        Whether to return numerators and denominators.
     use_training_latents : bool, default=False
         If True, uses the exact latent states from training (stored in model.info['X_hat']).
         This should give near-zero residuals for training data since A was fit to these states.
@@ -669,16 +630,11 @@ def compute_residuals_subspace_dmdc(
     eigenvectors = eigenvectors[:, :rank]
     
     # Use shared core computation
-    result = _compute_residuals_from_matrices(
-        X, Y_corrected, eigenvalues, eigenvectors, return_num_denom
+    residuals, normalized_residuals = _compute_residuals_from_matrices(
+        X, Y_corrected, eigenvalues, eigenvectors
     )
     
-    if return_num_denom:
-        residuals, normalized_residuals, numerators, denominators = result
-        return eigenvalues, eigenvectors, residuals, normalized_residuals, numerators, denominators
-    else:
-        residuals, normalized_residuals = result
-        return eigenvalues, eigenvectors, residuals, normalized_residuals
+    return eigenvalues, eigenvectors, residuals, normalized_residuals
 
 
 # =============================================================================
@@ -768,14 +724,9 @@ class ResidualComputer:
         raise ValueError(f"Cannot detect model type for {type(model)}. "
                         "Please specify model_type explicitly.")
     
-    def compute(self, return_num_denom: bool = False):
+    def compute(self):
         """
         Compute residuals for the model.
-        
-        Parameters
-        ----------
-        return_num_denom : bool
-            If True, also return numerators and denominators.
         
         Returns
         -------
@@ -792,34 +743,26 @@ class ResidualComputer:
             result = compute_residuals(
                 self.model, 
                 self.test_data, 
-                control_data=self.control_data,
-                return_num_denom=return_num_denom
+                control_data=self.control_data
             )
         elif self.model_type == "subspace_dmdc":
             result = compute_residuals_subspace_dmdc(
                 self.model, 
                 self.test_data, 
-                self.control_data,
-                return_num_denom=return_num_denom
+                self.control_data
             )
         elif self.model_type == "pykoopman":
             result = compute_residuals_pykoopman(
                 self.model, 
                 self.test_data, 
-                control_data=self.control_data,
-                return_num_denom=return_num_denom
+                control_data=self.control_data
             )
         else:
             raise ValueError(f"Unknown model_type: {self.model_type}")
         
-        if return_num_denom:
-            self.eigenvalues, self.eigenvectors, self.residuals, self.normalized_residuals, nums, denoms = result
-            self._computed = True
-            return self.eigenvalues, self.eigenvectors, self.residuals, self.normalized_residuals, nums, denoms
-        else:
-            self.eigenvalues, self.eigenvectors, self.residuals, self.normalized_residuals = result
-            self._computed = True
-            return self.eigenvalues, self.eigenvectors, self.residuals, self.normalized_residuals
+        self.eigenvalues, self.eigenvectors, self.residuals, self.normalized_residuals = result
+        self._computed = True
+        return self.eigenvalues, self.eigenvectors, self.residuals, self.normalized_residuals
     
     def plot(
         self, 

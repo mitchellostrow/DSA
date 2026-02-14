@@ -10,4 +10,4 @@ from DSA.simdist_controllability import ControllabilitySimilarityTransformDist
 from DSA.stats import *
 from DSA.sweeps import *
 from DSA.preprocessing import *
-from DSA import resdmd
+from DSA.resdmd import *

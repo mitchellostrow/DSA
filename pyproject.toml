@@ -28,7 +28,11 @@ dependencies = [
     "optht",
     "derivative",
     "lightning",
-    "prettytable"
+    "prettytable",
+    "scipy",
+    "scikit-learn",
+    "matplotlib",
+    "joblib",
 ]
 
 [project.optional-dependencies]
