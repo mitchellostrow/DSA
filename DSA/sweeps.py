@@ -12,13 +12,11 @@ from .dmdc import DMDc
 from .subspace_dmdc import SubspaceDMDc
 from .stats import measure_nonnormality_transpose, compute_all_stats
 from .resdmd import ResidualComputer
-import matplotlib.pyplot as plt
 from typing import List, Dict, Any, Optional, Union, Tuple
 from abc import ABC, abstractmethod
 import warnings
 import torch
 
-# Import pykoopman
 from . import pykoopman as pk
 from .pykoopman.observables import TimeDelay, Identity
 

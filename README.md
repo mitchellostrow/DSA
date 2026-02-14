@@ -53,6 +53,21 @@ cd DSA/
 pip install -e .
 ```
 
+You can also create an envirnoment with `uv` for fast, reliable dependency managemen
+```
+# 1. Create virtual environment
+uv venv
+
+# 2. Install DSA with all dependencies
+uv pip install -e ".[dev]" --python .venv/bin/python
+
+# 3. Install Jupyter support
+uv pip install ipykernel jupyter --python .venv/bin/python
+
+# 4. Register kernel for VS Code/Jupyter
+.venv/bin/python -m ipykernel install --user --name=dsa-uv --display-name="DSA (uv)"
+```
+
 ## Brief Tutorial
 
 The central object in the package is `GeneralizedDSA`, which links together the different types of `DMD` and `SimilarityTransformDist` (called Procrustes Analysis over Vector Fields in the first paper) objects. We designed an API that should be easy to use them in conjunction (`DSA`) with a variety of datatypes for a range of analysis cases:

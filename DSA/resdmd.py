@@ -10,9 +10,6 @@ before computing residuals on the autonomous dynamics.
 
 import warnings
 import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib import cm
-from matplotlib import colors as mcolors
 from typing import Literal, Tuple
 
 try:
@@ -30,7 +27,6 @@ except ImportError:
         embed_data_DMDc = None
 
 import torch
-import ot
 
 
 # =============================================================================
@@ -768,7 +764,7 @@ class ResidualComputer:
         self, 
         cmin: float = None, 
         cmax: float = None,
-        ax: plt.Axes = None,
+        ax=None,
         figsize: tuple = (6, 6),
         title: str = None,
     ):
@@ -792,6 +788,10 @@ class ResidualComputer:
         -------
         fig, ax : matplotlib figure and axes
         """
+        import matplotlib.pyplot as plt
+        from matplotlib import cm
+        from matplotlib import colors as mcolors
+
         if not self._computed:
             self.compute()
         
@@ -864,6 +864,10 @@ def plot_residuals(eigenvalues, residuals, cmin=None, cmax=None):
     cmax : float, optional
         Maximum value for color scale.
     """
+    import matplotlib.pyplot as plt
+    from matplotlib import cm
+    from matplotlib import colors as mcolors
+
     residuals_real = np.abs(residuals)
     if cmin is None:
         cmin = np.min(residuals_real)
@@ -968,6 +972,8 @@ def compute_ot_distance(a, b):
     C : np.ndarray
         Transport plan.
     """
+    import ot
+
     # Convert complex to 2D if needed
     if np.iscomplexobj(a):
         a = np.vstack([a.real, a.imag]).T

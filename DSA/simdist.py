@@ -1,13 +1,12 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from typing import Literal
+from typing import Literal, Final
 import numpy as np
 import torch.nn.utils.parametrize as parametrize
-from scipy.stats import wasserstein_distance
-import ot  # optimal transport for multidimensional l2 wasserstein
 import warnings
-from typing import Final
+
+from ot import dist, emd, emd2, sinkhorn2
 
 try:
     from .dmd import DMD
@@ -273,7 +272,7 @@ class SimilarityTransformDist:
             device = a.device
             # a = a  # .cpu()
             # b = b  # .cpu()
-            self.M = ot.dist(a, b)  # .numpy()
+            self.M = dist(a, b)  # .numpy()
             if wasserstein_weightings is not None:
                 a, b = wasserstein_weightings
                 assert isinstance(a, (torch.Tensor, np.ndarray))
@@ -289,15 +288,15 @@ class SimilarityTransformDist:
             a, b = a.to(device), b.to(device)
 
             if self.differentiable:
-                self.score_star = ot.sinkhorn2(
+                self.score_star = sinkhorn2(
                     a, b, self.M, reg=self.sinkhorn_reg
                 )
                 # No transport plan needed for differentiable mode
                 self.C_star = None
             else:
-                self.C_star = ot.emd(a, b, self.M)
+                self.C_star = emd(a, b, self.M)
                 self.score_star = (
-                    ot.emd2(a, b, self.M) #* a.shape[0]
+                    emd2(a, b, self.M) #* a.shape[0]
                 )  # add scaling factor due to random matrix theory
                 # self.score_star = np.sum(self.C_star * self.M)
                 self.C_star = self.C_star / torch.linalg.norm(

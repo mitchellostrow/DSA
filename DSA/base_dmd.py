@@ -74,7 +74,7 @@ class BaseDMD(ABC):
             if not torch.cuda.is_available():
                 warnings.warn(
                     f"CUDA device '{device}' requested but CUDA is not available. "
-                    "Falling back to CPU with NumPy. "
+                    "Falling back to CPU. "
                     "To use GPU acceleration, ensure PyTorch with CUDA support is installed.",
                     RuntimeWarning,
                     stacklevel=3
@@ -91,7 +91,7 @@ class BaseDMD(ABC):
                 except (RuntimeError, AssertionError) as e:
                     warnings.warn(
                         f"CUDA device '{device}' requested but not accessible: {e}. "
-                        f"Falling back to CPU with NumPy.",
+                        f"Falling back to CPU.",
                         RuntimeWarning,
                         stacklevel=3
                     )

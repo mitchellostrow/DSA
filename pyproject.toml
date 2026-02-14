@@ -27,7 +27,6 @@ dependencies = [
     "tqdm",
     "optht",
     "derivative",
-    "lightning",
     "prettytable",
     "scipy",
     "scikit-learn",
@@ -42,6 +41,10 @@ dev = [
 umap = [
     "umap-learn"
 ]
+
+[tool.uv]
+# PyTorch ships CPU-only wheels on PyPI for macOS, which is what we want.
+# No special index needed — uv resolves from PyPI by default.
 
 [project.urls]
 Homepage = "https://github.com/mitchellostrow/DSA"

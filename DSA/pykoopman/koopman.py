@@ -24,7 +24,6 @@ from .regression import DMDc
 from .regression import EDMDc
 from .regression import EnsembleBaseRegressor
 from .regression import HAVOK
-from .regression import NNDMD
 from .regression import PyDMDRegressor
 
 
@@ -238,12 +237,6 @@ class Koopman(BaseEstimator):
                     func=transform_y,  # Composed: observable + flatten
                     inverse_func=self.observables.inverse,
                 )
-        elif isinstance(self.regressor, NNDMD):
-            regressor = self.regressor
-            y_flag = False
-            # NNDMD handles its own data - skip pipeline setup and return early
-            # (will add full NNDMD handling in next step)
-
         else:
             # multiple 1-step-trajectories (X and Y provided separately)
             regressor = EnsembleBaseRegressor(

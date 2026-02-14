@@ -504,8 +504,11 @@ class DMDc(BaseDMD):
         Fits the DMDc model to the provided data.
         """
         # Overwrite parameters if provided
-        self.device = self.device if device is None else device
         self.verbose = self.verbose if verbose is None else verbose
+        
+        # Validate and set device with graceful fallback
+        if device is not None:
+            self.device, self.use_torch = self._setup_device(device, use_torch=True)
 
         self.compute_hankel(data, control_data, n_delays, delay_interval)
         self.compute_svd()

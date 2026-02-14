@@ -552,8 +552,11 @@ class DMD(BaseDMD):
         """
         # if parameters are provided, overwrite them from the init
         self.steps_ahead = self.steps_ahead if steps_ahead is None else steps_ahead
-        self.device = self.device if device is None else device
         self.verbose = self.verbose if verbose is None else verbose
+        
+        # Validate and set device with graceful fallback
+        if device is not None:
+            self.device, self.use_torch = self._setup_device(device, use_torch=None)
 
         self.compute_hankel(data, n_delays, delay_interval)
         self.compute_svd()
