@@ -4,7 +4,7 @@ from pkg_resources import get_distribution
 
 try:
     __version__ = get_distribution(__name__).version
-except:
+except Exception:
     # Package distribution metadata is not available (e.g., running from source);
     # in this case, simply leave __version__ undefined.
     pass
