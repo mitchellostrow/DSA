@@ -16,6 +16,7 @@ from typing import List, Dict, Any, Optional, Union, Tuple
 from abc import ABC, abstractmethod
 import warnings
 import torch
+from matplotlib.pyplot import plot, savefig, subplots, cm, tight_layout
 
 from . import pykoopman as pk
 from .pykoopman.observables import TimeDelay, Identity
@@ -346,11 +347,11 @@ class BaseSweeper(ABC):
         if figsize is None:
             figsize = (4 * n_metrics, 4)
         
-        fig, axes = plt.subplots(1, n_metrics, figsize=figsize)
+        fig, axes = subplots(1, n_metrics, figsize=figsize)
         if n_metrics == 1:
             axes = [axes]
         
-        cmap_obj = plt.cm.get_cmap(cmap)
+        cmap_obj = cm.get_cmap(cmap)
         n_legend = len(legend_values)
         
         for ax_idx, metric in enumerate(metrics):
@@ -378,9 +379,9 @@ class BaseSweeper(ABC):
         
         if title:
             fig.suptitle(title, y=1.02)
-        plt.tight_layout()
+        tight_layout()
         if save_path:
-            plt.savefig(save_path, bbox_inches='tight')
+            savefig(save_path, bbox_inches='tight')
         return fig, axes
 
 

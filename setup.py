@@ -17,7 +17,10 @@ setuptools.setup(
         "tqdm",
         "optht", #for havok in pykoopman
         "derivative", #for pykoopman
-        "prettytable"
+        "prettytable",
+         "scipy",
+        "scikit-learn",
+        "matplotlib",
     ],
     extras_require={
         "dev": ["pytest>=3.7"],
