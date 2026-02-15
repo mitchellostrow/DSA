@@ -4,7 +4,11 @@ from sklearn.manifold import Isomap, LocallyLinearEmbedding
 from sklearn.decomposition import PCA
 from sklearn.pipeline import make_pipeline
 from sklearn.kernel_approximation import Nystroem
-from DSA.dmd import embed_signal_torch
+
+try:
+    from .dmd import embed_signal_torch
+except ImportError:
+    from dmd import embed_signal_torch
 from scipy.signal import convolve
 
 
@@ -76,7 +80,7 @@ def coarse_grain(trajectories, bin_size=5, bins_overlapping=0):
         for j in range(n_bins):
             start_idx = j * (bin_size - bins_overlapping)
             end_idx = start_idx + bin_size
-            coarse_trajectories[:, j] = np.sum(
+            coarse_trajectories[:, j] = np.mean(
                 trajectories[:, start_idx:end_idx], axis=1
             )
     else:
@@ -90,7 +94,7 @@ def coarse_grain(trajectories, bin_size=5, bins_overlapping=0):
         for j in range(n_bins):
             start_idx = j * (bin_size - bins_overlapping)
             end_idx = start_idx + bin_size
-            coarse_trajectories[j] = np.sum(trajectories[start_idx:end_idx], axis=0)
+            coarse_trajectories[j] = np.mean(trajectories[start_idx:end_idx], axis=0)
     return coarse_trajectories
 
 
@@ -213,17 +217,20 @@ def nonlinear_dimensionality_reduction(
         pca = PCA(n_components=n_components)
         model = make_pipeline(nystroem, pca)
     elif method.lower() == "umap":
-        #assert that umap is installed
         try:
             from umap import UMAP
         except ImportError:
-            raise ImportError("umap is not installed. Please install it with `pip install umap-learn`")
-        
+            raise ImportError(
+                "umap-learn is not installed. Please install it with "
+                "`pip install umap-learn` or install DSA with the 'umap' extra: "
+                "`pip install dsa-metric[umap]`"
+            )
+
         model = UMAP(n_components=n_components, **kwargs)
     else:
         raise ValueError(
             f"Unknown dimensionality reduction method: {method}. "
-            f"Supported methods are 'isomap', 'lle', 'pca', and 'kernel_pca'."
+            f"Supported methods are 'isomap', 'lle', 'pca', 'kernel_pca', and 'umap'."
         )
 
     reduced_data = model.fit_transform(data)
@@ -237,13 +244,16 @@ def nonlinear_dimensionality_reduction(
 
 
 def featurize_data(
-    data, method="id", pca_downsample=False, pca_n_components=3, **kwargs
+    data, method="id", pca_downsample=False, pca_n_components=3, include_state=False, **kwargs
 ):
     if data.ndim == 3:
         shape = data.shape
         data = data.reshape(-1, data.shape[-1])
     else:
         shape = data.shape
+
+    # Store original data if we need to concatenate it later
+    original_data = data.copy() if include_state else None
 
     if method.lower() == "id":
         pass
@@ -269,12 +279,17 @@ def featurize_data(
     if pca_downsample:
         data = pca_reduce(data, n_components=pca_n_components)
 
+    # Concatenate original state if requested
+    if include_state and original_data is not None:
+        data = np.concatenate([data, original_data], axis=-1)
+
     if len(shape) == 3:
         return data.reshape(shape[0], shape[1], -1)
     else:
-        return data.reshape(shape[0],-1)
+        return data.reshape(shape[0], -1)
 
-def gaussian_filter(data, sigma, truncate=2.0,causal=True,dim=0,mode='same'):
+
+def gaussian_filter(data, sigma, truncate=2.0, causal=True, dim=0, mode="same"):
     """
     Applies a causal Gaussian filter to a 1D time series.
 
@@ -289,7 +304,7 @@ def gaussian_filter(data, sigma, truncate=2.0,causal=True,dim=0,mode='same'):
 
     kernel_size = int(truncate * sigma + 0.5)
     t = np.arange(-kernel_size, kernel_size + 1)
-    kernel = np.exp(-0.5 * (t / sigma)**2)
+    kernel = np.exp(-0.5 * (t / sigma) ** 2)
     kernel /= kernel.sum()
 
     if causal:
@@ -299,9 +314,128 @@ def gaussian_filter(data, sigma, truncate=2.0,causal=True,dim=0,mode='same'):
     kernel = kernel[::-1]
 
     filtered_data = np.apply_along_axis(
-        lambda x: convolve(x, kernel, mode=mode),
-        axis=dim,
-        arr=data
+        lambda x: convolve(x, kernel, mode=mode), axis=dim, arr=data
     )
 
     return filtered_data, kernel
+
+
+def coarse_grain_space(
+    data,
+    method="uniform",
+    nbins_per_dim=20,
+    sigma=None,
+    kernel_width=2,
+    scale="standard",
+):
+    """
+    Convert continuous data to one-hot encoded spatial bins, optionally with spatial smoothing.
+
+    Parameters
+    ----------
+    data : np.ndarray
+        Input data of shape (n_conditions, n_timepoints, n_dims) or (n_timepoints, n_dims)
+    method : str
+        Method for binning. Currently only 'uniform' is supported.
+    nbins_per_dim : int
+        Number of bins per dimension
+    sigma : float or None
+        Standard deviation for Gaussian smoothing kernel. If None, no smoothing is applied.
+    kernel_width : int
+        Width of smoothing kernel in number of bins
+    scale : str
+        Scaling method: 'standard' for zero mean unit variance, or 'minmax' for [0,1] range
+
+    Returns
+    -------
+    encoded : np.ndarray
+        One-hot encoded data with shape (n_conditions, n_timepoints, n_total_bins)
+        or (n_timepoints, n_total_bins)
+    """
+    if method != "uniform":
+        raise NotImplementedError(
+            f"Method {method} not implemented. Only 'uniform' is currently supported."
+        )
+
+    # Get input shape and dimensionality
+    if data.ndim == 3:
+        n_conds, n_time, n_dims = data.shape
+        data_reshaped = data.reshape(-1, n_dims)
+    else:
+        n_time, n_dims = data.shape
+        data_reshaped = data
+
+    # Scale the data
+    if scale == "standard":
+        mean = np.mean(data_reshaped, axis=0)
+        std = np.std(data_reshaped, axis=0)
+        data_scaled = (data_reshaped - mean) / std
+    elif scale == "minmax":
+        min_vals = np.min(data_reshaped, axis=0)
+        max_vals = np.max(data_reshaped, axis=0)
+        data_scaled = (data_reshaped - min_vals) / (max_vals - min_vals)
+    else:
+        raise ValueError("scale must be 'standard' or 'minmax'")
+
+    # Calculate total number of bins and check if reasonable
+    n_total_bins = nbins_per_dim**n_dims
+    if n_total_bins > 1e6:
+        raise ValueError(
+            f"Total number of bins ({n_total_bins}) too large. Reduce nbins_per_dim or use different binning method."
+        )
+
+    # Create bin edges
+    bin_edges = [
+        np.linspace(
+            np.min(data_scaled[:, d]), np.max(data_scaled[:, d]), nbins_per_dim + 1
+        )
+        for d in range(n_dims)
+    ]
+
+    # Initialize one-hot encoded array
+    if data.ndim == 3:
+        encoded = np.zeros((n_conds, n_time, n_total_bins))
+    else:
+        encoded = np.zeros((n_time, n_total_bins))
+
+    # Assign data points to bins and handle edge cases
+    # Vectorized bin assignment and clipping for all dimensions at once
+    bin_indices = np.stack(
+        [
+            np.clip(
+                np.digitize(data_scaled[:, d], bin_edges[d]) - 1, 0, nbins_per_dim - 1
+            )
+            for d in range(n_dims)
+        ]
+    ).T
+
+    if n_dims > 1:
+        flat_indices = np.ravel_multi_index(bin_indices.T, [nbins_per_dim] * n_dims)
+    else:
+        # For 1D case, bin_indices is already the flat indices
+        flat_indices = bin_indices.ravel()
+
+    if data.ndim == 3:
+        encoded.reshape(-1, n_total_bins)[
+            np.arange(len(flat_indices)), flat_indices
+        ] = 1
+    else:
+        encoded[np.arange(len(flat_indices)), flat_indices] = 1
+
+    # Apply spatial smoothing if requested
+    if sigma is not None:
+        from scipy.ndimage import gaussian_filter1d
+
+        if data.ndim == 3:
+            for i in range(n_conds):
+                for t in range(n_time):
+                    encoded[i, t] = gaussian_filter1d(
+                        encoded[i, t], sigma=sigma, truncate=kernel_width
+                    )
+        else:
+            for t in range(n_time):
+                encoded[t] = gaussian_filter1d(
+                    encoded[t], sigma=sigma, truncate=kernel_width
+                )
+
+    return encoded

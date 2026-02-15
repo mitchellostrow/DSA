@@ -3,6 +3,11 @@
 import numpy as np
 import torch
 
+try:
+    from .base_dmd import BaseDMD
+except ImportError:
+    from base_dmd import BaseDMD
+
 
 def embed_signal_torch(data, n_delays, delay_interval=1):
     """
@@ -66,61 +71,35 @@ def embed_signal_torch(data, n_delays, delay_interval=1):
 
     return embedding
 
-def create_shift_operator(n_features, n_delays, delay_interval, steps_ahead,verbose=False):
-    """
-    Creates the shift operator matrix for a given delay embedding configuration.
 
-    Args:
-        n_features (int): The number of features (N).
-        n_delays (int): The number of delays (d).
-        delay_interval (int): The delay interval (tau).
-        steps_ahead (int): The number of time steps ahead to predict.
-
-    Returns:
-        torch.tensor: The shift operator matrix, or None if not constructible.
-    """
-    if steps_ahead != delay_interval:
-        if verbose:
-            print("Shift operator is not constructible for the given parameters.")
-        return None
-
-    embedding_dim = n_delays * n_features
-    shift_operator = torch.zeros((embedding_dim, embedding_dim))
-
-    # The bottom (d-1)N rows are the shift part
-    shift_operator[n_features:, :-n_features] = torch.eye((n_delays - 1) * n_features)
-
-    return shift_operator
-
-class DMD:
+class DMD(BaseDMD):
     """DMD class for computing and predicting with DMD models."""
 
     def __init__(
         self,
-        data,
-        n_delays,
+        data=None,
+        n_delays=1,
         delay_interval=1,
         rank=None,
         rank_thresh=None,
         rank_explained_variance=None,
         reduced_rank_reg=False,
-        lamb=0,
+        lamb=1e-8,
         device="cpu",
         verbose=False,
         send_to_cpu=False,
         steps_ahead=1,
-        substitute_shift_operator=False
     ):
         """
         Parameters
         ----------
-        data : np.ndarray or torch.tensor
+        data : np.ndarray or torch.tensor, optional
             The data to fit the DMD model to. Must be either: (1) a
             2-dimensional array/tensor of shape T x N where T is the number
             of time points and N is the number of observed dimensions
             at each time point, or (2) a 3-dimensional array/tensor of shape
             K x T x N where K is the number of "trials" and T and N are
-            as defined above.
+            as defined above. If None, data must be provided when calling fit().
 
         n_delays : int
             Parameter that controls the size of the delay embedding. Explicitly,
@@ -151,7 +130,9 @@ class DMD:
             Regularization parameter for ridge regression. Defaults to 0.
 
         device: string, int, or torch.device
-            A string, int or torch.device object to indicate the device to torch.
+            Device for computation. Options:
+            - 'cpu': Use CPU with PyTorch
+            - 'cuda' or 'cuda:X': Use GPU (auto-falls back to CPU if unavailable)
 
         verbose: bool
             If True, print statements will be provided about the progress of the fitting procedure.
@@ -162,13 +143,18 @@ class DMD:
 
         steps_ahead: int
             The number of time steps ahead to predict. Defaults to 1.
-
-        substitute_shift_operator: bool
-            If True, will substitute the bottom (d-1)N rows of the HAVOK operator with a custom shift operator. Defaults to True.
         """
 
-        self.device = device
-        self._init_data(data)
+        super().__init__(
+            device=device, verbose=verbose, send_to_cpu=send_to_cpu, lamb=lamb
+        )
+        
+        # Smart device setup with graceful CUDA fallback
+        # DMD always uses PyTorch, so use_torch=True
+        self.device, self.use_torch = self._setup_device(device, use_torch=True)
+
+        # Allow data=None for deferred fitting
+        self.data = self._init_single_data(data) if data is not None else None
 
         self.n_delays = n_delays
         self.delay_interval = delay_interval
@@ -176,11 +162,7 @@ class DMD:
         self.rank_thresh = rank_thresh
         self.rank_explained_variance = rank_explained_variance
         self.reduced_rank_reg = reduced_rank_reg
-        self.lamb = lamb
-        self.verbose = verbose
-        self.send_to_cpu = send_to_cpu
         self.steps_ahead = steps_ahead
-        self.substitute_shift_operator = substitute_shift_operator
 
         # Hankel matrix
         self.H = None
@@ -195,50 +177,6 @@ class DMD:
         # DMD attributes
         self.A_v = None
         self.A_havok_dmd = None
-        self.is_list_data = isinstance(self.data, list)
-
-
-    def _init_data(self, data):
-        # check if the data is an np.ndarry - if so, convert it to Torch
-        if isinstance(data, list):
-            try:
-                # Attempt to convert to a single tensor if possible (non-ragged)
-                processed_data = [
-                    torch.from_numpy(d) if isinstance(d, np.ndarray) else d
-                    for d in data
-                ]
-                self.data = torch.stack(processed_data)
-            except (RuntimeError, ValueError):
-                # Handle ragged lists
-                self.data = [
-                    torch.from_numpy(d) if isinstance(d, np.ndarray) else d
-                    for d in data
-                ]
-                # check for consistent last dimension
-                n_features = self.data[0].shape[-1]
-                if not all(d.shape[-1] == n_features for d in self.data):
-                    raise ValueError(
-                        "All tensors in the list must have the same number of features (last dimension)."
-                    )
-                self.n = n_features
-                self.ntrials = sum(
-                    d.shape[0] if d.ndim == 3 else 1 for d in self.data
-                )
-                self.trial_counts = [
-                    d.shape[0] if d.ndim == 3 else 1 for d in self.data
-                ]
-                return
-        elif isinstance(data, np.ndarray):
-            data = torch.from_numpy(data)
-        self.data = data
-        # create attributes for the data dimensions
-        if self.data.ndim == 3:
-            self.ntrials = self.data.shape[0]
-            self.n = self.data.shape[2]
-        else:
-            self.n = self.data.shape[1]
-            self.ntrials = 1
-        self.is_list_data = isinstance(self.data, list)
 
     def compute_hankel(
         self,
@@ -273,9 +211,12 @@ class DMD:
             print("Computing Hankel matrix ...")
 
         # if parameters are provided, overwrite them from the init
-         # if parameters are provided, overwrite them from the init
         if data is not None:
-            self._init_data(data)
+            self.data = self._init_single_data(data)
+        
+        # Ensure data is available
+        if self.data is None:
+            raise ValueError("Data must be provided either at initialization or when calling fit()/compute_hankel().")
 
         self.n_delays = self.n_delays if n_delays is None else n_delays
         self.delay_interval = (
@@ -337,9 +278,7 @@ class DMD:
         self.S_mat_inv = torch.diag(1 / S).to(self.device)
 
         # compute explained variance
-        exp_variance_inds = self.S**2 / ((self.S**2).sum())
-        cumulative_explained = torch.cumsum(exp_variance_inds, 0)
-        self.cumulative_explained_variance = cumulative_explained
+        self.cumulative_explained_variance = self._compute_explained_variance(self.S)
 
         # make the X and Y components of the regression by staggering the hankel eigen-time delay coordinates by time
         if self.reduced_rank_reg:
@@ -432,53 +371,26 @@ class DMD:
             else rank_explained_variance
         )
 
-        none_vars = (
-            (self.rank is None)
-            + (self.rank_thresh is None)
-            + (self.rank_explained_variance is None)
-        )
-        if none_vars < 2:
-            raise ValueError(
-                "More than one value was provided between rank, rank_thresh, and rank_explained_variance. Please provide only one of these, and ensure the others are None!"
-            )
-        elif none_vars == 3:
-            self.rank = len(self.S)
-
+        # Determine which singular values to use
         if self.reduced_rank_reg:
             S = self.proj_mat_S
+            cumulative_explained = self._compute_explained_variance(S)
         else:
             S = self.S
+            cumulative_explained = self.cumulative_explained_variance
 
-        if rank_thresh is not None:
-            if S[-1] > rank_thresh:
-                self.rank = len(S)
-            else:
-                self.rank = torch.argmax(
-                    torch.arange(len(S), 0, -1).to(self.device) * (S < rank_thresh)
-                )
-
-        if rank_explained_variance is not None:
-            self.rank = int(
-                torch.argmax(
-                    (self.cumulative_explained_variance > rank_explained_variance).type(
-                        torch.int
-                    )
-                )
-                .cpu()
-                .numpy()
-            )
-
+        # Get maximum possible rank
         h_shape_last = self.H_shapes[-1][-1] if self.is_list_data else self.H.shape[-1]
-        if self.rank > h_shape_last:
-            self.rank = h_shape_last
 
-        if self.rank is None:
-            if S[-1] > self.rank_thresh:
-                self.rank = len(S)
-            else:
-                self.rank = torch.argmax(
-                    torch.arange(len(S), 0, -1).to(self.device) * (S < self.rank_thresh)
-                )
+        # Use base class method to compute rank
+        self.rank = self._compute_rank_from_params(
+            S=S,
+            cumulative_explained_variance=cumulative_explained,
+            max_rank=h_shape_last,
+            rank=self.rank,
+            rank_thresh=self.rank_thresh,
+            rank_explained_variance=self.rank_explained_variance,
+        )
 
     def compute_havok_dmd(self, lamb=None):
         """
@@ -504,27 +416,15 @@ class DMD:
             @ self.Vt_minus[:, : self.rank].T
             @ self.Vt_plus[:, : self.rank]
         ).T
-        self.A_v_learned = A_v
-        self.A_havok_dmd_learned = (
+        self.A_v = A_v
+        self.A = A_v #for compatibility with pydmd
+        self.A_havok_dmd = (
             self.U
             @ self.S_mat[: self.U.shape[1], : self.rank]
-            @ self.A_v_learned
+            @ self.A_v
             @ self.S_mat_inv[: self.rank, : self.U.shape[1]]
             @ self.U.T
         )
-
-        if self.substitute_shift_operator:
-            self.A_havok_dmd = self.A_havok_dmd_learned.clone()
-            shift_operator = create_shift_operator(self.n, self.n_delays, self.delay_interval, self.steps_ahead,self.verbose)
-            if shift_operator is not None:
-                self.A_havok_dmd[self.n:, :] = shift_operator[self.n:, :].to(self.device)
-                self.A_v = self.project_A_havok_to_Av(self.A_havok_dmd)
-            else:
-                self.A_havok_dmd = self.A_havok_dmd_learned
-                self.A_v = self.A_v_learned
-        else:
-            self.A_havok_dmd = self.A_havok_dmd_learned
-            self.A_v = self.A_v_learned
 
         if self.verbose:
             print("Least squares complete! \n")
@@ -577,25 +477,10 @@ class DMD:
             @ self.S_mat_inv[: self.A_v.shape[0], : self.U.shape[1]]
             @ self.U.T
         )
+        self.A = self.A_v
 
         if self.verbose:
             print("Reduced Rank Regression complete! \n")
-
-    def project_A_havok_to_Av(self, A_havok_dmd_matrix):
-        """
-        Projects a full A_havok_dmd matrix back to the low-rank A_v space.
-        """
-        if self.U is None or self.S_mat is None or self.S_mat_inv is None:
-            raise ValueError("SVD must be computed first.")
-
-        A_v_projected = (
-            self.S_mat_inv[:self.rank, :self.rank]
-            @ self.U[:, :self.rank].T
-            @ A_havok_dmd_matrix
-            @ self.U[:, :self.rank]
-            @ self.S_mat[:self.rank, :self.rank]
-        )
-        return A_v_projected
 
     def fit(
         self,
@@ -667,8 +552,11 @@ class DMD:
         """
         # if parameters are provided, overwrite them from the init
         self.steps_ahead = self.steps_ahead if steps_ahead is None else steps_ahead
-        self.device = self.device if device is None else device
         self.verbose = self.verbose if verbose is None else verbose
+        
+        # Validate and set device with graceful fallback
+        if device is not None:
+            self.device, self.use_torch = self._setup_device(device, use_torch=None)
 
         self.compute_hankel(data, n_delays, delay_interval)
         self.compute_svd()
@@ -683,6 +571,8 @@ class DMD:
 
         if self.send_to_cpu:
             self.all_to_device("cpu")  # send back to the cpu to save memory
+
+        # print('After DMD fitting in dmd.py', self.A_v.shape)
 
     def predict(self, test_data=None, reseed=None, full_return=False):
         """
@@ -723,34 +613,23 @@ class DMD:
         if reseed is None:
             reseed = 1
 
-        U_r = self.U[:, :self.rank]
-        S_inv_r = self.S_mat_inv[:self.rank, :self.rank]
-        S_r = self.S_mat[:self.rank, :self.rank]
+        H_test_havok_dmd = torch.zeros(H_test.shape).to(self.device)
+        H_test_havok_dmd[:, :steps_ahead] = H_test[:, :steps_ahead]
 
-        # Project to v space
-        V_test_T = S_inv_r @ U_r.T @ H_test.transpose(1, 2)
-        V_test = V_test_T.transpose(1, 2)
-
-        V_test_pred = torch.zeros(V_test.shape).to(self.device)
-        V_test_pred[:, :steps_ahead] = V_test[:, :steps_ahead]
-
-        for t in range(steps_ahead, V_test.shape[1]):
+        A = self.A_havok_dmd.unsqueeze(0)
+        for t in range(steps_ahead, H_test.shape[1]):
             if t % reseed == 0:
-                v_t = V_test[:, t - steps_ahead]
+                H_test_havok_dmd[:, t] = (
+                    A @ H_test[:, t - steps_ahead].transpose(-2, -1)
+                ).transpose(-2, -1)
             else:
-                v_t = V_test_pred[:, t - steps_ahead]
-            
-            v_t_plus_1 = (self.A_v @ v_t.unsqueeze(-1)).squeeze(-1)
-            V_test_pred[:, t] = v_t_plus_1
-
-        # Project back to full space
-        H_test_pred = U_r @ S_r @ V_test_pred.transpose(1, 2)
-        H_test_pred = H_test_pred.transpose(1, 2)
-
+                H_test_havok_dmd[:, t] = (
+                    A @ H_test_havok_dmd[:, t - steps_ahead].transpose(-2, -1)
+                ).transpose(-2, -1)
         pred_data = torch.hstack(
             [
                 test_data[:, : (self.n_delays - 1) * self.delay_interval + steps_ahead],
-                H_test_pred[:, steps_ahead:, : self.n],
+                H_test_havok_dmd[:, steps_ahead:, : self.n],
             ]
         )
 
@@ -758,22 +637,23 @@ class DMD:
             pred_data = pred_data[0]
 
         if full_return:
-            return pred_data, H_test_pred, H_test, V_test_pred, V_test
+            return pred_data, H_test_havok_dmd, H_test
         else:
             return pred_data
 
-    def all_to_device(self, device="cpu"):
-        for k, v in self.__dict__.items():
-            if isinstance(v, torch.Tensor):
-                self.__dict__[k] = v.to(device)
-
     def project_onto_modes(self):
-        eigvals, eigvecs = torch.linalg.eigh(self.A_v)
-        # project Vt_minus onto the eigenvectors
-        projections = self.V[:, : self.rank] @ eigvecs
-        projections = projections.reshape(
-            self.data.shape[0], self.data.shape[1] - self.n_delays + 1, -1
-        )
-
-        # get the data that matches the shape of the original data
-        return projections, self.data[:, : -self.n_delays + 1]
+        # Minimal: eigenfunction values per Hankel row + matching time indices + data slice
+        if self.A_v is None or self.V is None:
+            raise ValueError("Call fit() first.")
+        k = int(self.rank or self.A_v.shape[0])
+        eigvals, W = torch.linalg.eig(self.A_v)
+        Winv = torch.linalg.inv(W)
+        Vslice = self.V[:, :k].to(dtype=Winv.dtype, device=self.device)
+        phi = Vslice @ Winv.T.to(dtype=Vslice.dtype, device=self.device)  # (T_embed, k)
+        offset = (self.n_delays - 1) * self.delay_interval
+        if self.data.ndim == 3:
+            x = self.data[:, offset : offset + phi.shape[0], :]  # keep all features
+            phi = phi.reshape(x.shape[0], x.shape[1], -1)
+        else:
+            x = self.data[offset : offset + phi.shape[0], :]
+        return eigvals, phi, x

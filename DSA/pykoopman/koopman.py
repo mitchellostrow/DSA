@@ -1,0 +1,729 @@
+"""module for discrete time Koopman class"""
+
+from __future__ import annotations
+
+from warnings import catch_warnings
+from warnings import filterwarnings
+from warnings import warn
+
+import numpy as np
+from numpy import empty
+from pydmd import DMD
+from pydmd import DMDBase
+from sklearn.base import BaseEstimator
+from sklearn.base import TransformerMixin
+from sklearn.metrics import r2_score
+from sklearn.pipeline import Pipeline
+from sklearn.utils.validation import check_is_fitted
+
+from .common import validate_input
+from .observables import Identity
+from .observables import TimeDelay
+from .regression import BaseRegressor
+from .regression import DMDc
+from .regression import EDMDc
+from .regression import EnsembleBaseRegressor
+from .regression import HAVOK
+from .regression import PyDMDRegressor
+
+
+class FlattenTransformer(BaseEstimator, TransformerMixin):
+    """
+    Flatten various data structures to 2D for regressor consumption.
+    
+    Handles:
+    - 3D arrays (trials, time, features) → 2D (trials*time, features)
+    - Lists of arrays → concatenated 2D
+    - 2D arrays → pass through
+    - 1D arrays → reshape to column vector
+    
+    This transformer is inserted after observables to ensure regressors
+    always receive 2D input, while allowing observables to process
+    structured data (lists, 3D) that preserves trial boundaries.
+    """
+    
+    def fit(self, X, y=None):
+        """Fit method - stateless transformer."""
+        return self
+    
+    def transform(self, X):
+        """
+        Flatten input to 2D array.
+        
+        Args:
+            X: Input data - can be list, 1D, 2D, or 3D array
+            
+        Returns:
+            2D numpy array suitable for regressor
+        """
+        if isinstance(X, list):
+            # Observable returned list of arrays - flatten and stack
+            flattened = []
+            for x in X:
+                if isinstance(x, np.ndarray):
+                    if x.ndim == 3:
+                        # Flatten 3D: (trials, time, features) → (trials*time, features)
+                        flattened.append(x.reshape(-1, x.shape[2]))
+                    elif x.ndim == 2:
+                        flattened.append(x)
+                    elif x.ndim == 1:
+                        flattened.append(x.reshape(-1, 1))
+                    else:
+                        flattened.append(x)
+            return np.vstack(flattened) if flattened else np.array([])
+        
+        elif isinstance(X, np.ndarray):
+            if X.ndim == 3:
+                # Flatten 3D: (trials, time, features) → (trials*time, features)
+                return X.reshape(-1, X.shape[2])
+            elif X.ndim == 2:
+                # Already 2D - pass through
+                return X
+            elif X.ndim == 1:
+                # Reshape to column vector
+                return X.reshape(-1, 1)
+        
+        # Fallback - return as-is
+        return X
+    
+    def inverse_transform(self, X):
+        """
+        Inverse transform - not typically used in this pipeline.
+        Included for completeness.
+        """
+        return X
+
+
+class Koopman(BaseEstimator):
+    """Discrete-Time Koopman class.
+
+    The input-output data is all row-wise if stated elsewhere.
+    All of the matrix, are based on column-wise linear system.
+    This class is inherited from `pykoopman.regression.BaseEstimator`.
+
+    Args:
+        observables: observables object, optional
+            (default: `pykoopman.observables.Identity`)
+            Map(s) to apply to raw measurement data before estimating the
+            Koopman operator.
+            Must extend `pykoopman.observables.BaseObservables`.
+            The default option, `pykoopman.observables.Identity`, leaves
+            the input untouched.
+
+        regressor: regressor object, optional (default: `DMD`)
+            The regressor used to learn the Koopman operator from the observables.
+            `regressor` can either extend the `pykoopman.regression.BaseRegressor`,
+            or `pydmd.DMDBase`.
+            In the latter case, the pydmd object must have both a `fit`
+            and a `predict` method.
+
+        quiet: boolean, optional (default: False)
+            Whether or not warnings should be silenced during fitting.
+
+    Attributes:
+        model: sklearn.pipeline.Pipeline
+            Internal representation of the forward model.
+            Applies the observables and the regressor.
+
+        n_input_features_: int
+            Number of input features before computing observables.
+
+        n_output_features_: int
+            Number of output features after computing observables.
+
+        n_control_features_: int
+            Number of control features used as input to the system.
+
+        time: dictionary
+            Time vector properties.
+    """
+
+    def __init__(self, observables=None, regressor=None, quiet=False):
+        """Constructor for the Koopman class.
+
+        Args:
+            observables: observables object, optional
+                (default: `pykoopman.observables.Identity`)
+                Map(s) to apply to raw measurement data before estimating the
+                Koopman operator.
+                Must extend `pykoopman.observables.BaseObservables`.
+                The default option, `pykoopman.observables.Identity`, leaves
+                the input untouched.
+
+            regressor: regressor object, optional (default: `DMD`)
+                The regressor used to learn the Koopman operator from the observables.
+                `regressor` can either extend the `pykoopman.regression.BaseRegressor`,
+                or `pydmd.DMDBase`.
+                In the latter case, the pydmd object must have both a `fit`
+                and a `predict` method.
+
+            quiet: boolean, optional (default: False)
+                Whether or not warnings should be silenced during fitting.
+        """
+        if observables is None:
+            observables = Identity()
+        if regressor is None:
+            regressor = PyDMDRegressor(DMD(svd_rank=-1)) 
+        if isinstance(regressor, DMDBase):
+            regressor = PyDMDRegressor(regressor)
+        elif not isinstance(regressor, (BaseRegressor)):
+            raise TypeError("Regressor must be from valid class")
+        self.observables = observables
+        self.regressor = regressor
+        self.quiet = quiet
+
+    def fit(self, x, y=None, u=None, dt=1):
+        """
+        Fit the Koopman model by learning an approximate Koopman operator.
+
+        Args:
+            x: numpy.ndarray, shape (n_samples, n_features)
+                Measurement data to be fit. Each row should correspond to an example
+                and each column a feature. If only x is provided, it is assumed that
+                examples are equi-spaced in time (i.e., a uniform timestep is assumed).
+
+            y: numpy.ndarray, shape (n_samples, n_features), optional (default: None)
+                Target measurement data to be fit, i.e., it is assumed y = fun(x). Each
+                row should correspond to an example and each column a feature. The
+                samples in x and y are generally not required to be consecutive and
+                equi-spaced.
+
+            u: numpy.ndarray, shape (n_samples, n_control_features), optional (default:
+                None) Control/actuation/external parameter data. Each row should
+                correspond to one sample and each column a control variable or feature.
+                The control variable may be the amplitude of an actuator or an external,
+                time-varying parameter. It is assumed that samples in u occur at the
+                time instances of the corresponding samples in x,
+                e.g., x(t+1) = fun(x(t), u(t)).
+
+            dt: float, optional (default: 1)
+                Time step between samples
+
+        Returns:
+            self: returns a fit `Koopman` instance
+        """
+        x = validate_input(x)
+
+        if u is None:
+            self.n_control_features_ = 0
+        elif not isinstance(self.regressor, DMDc) and not isinstance(
+            self.regressor, EDMDc
+        ):
+            raise ValueError(
+                "Control input u was passed, " "but self.regressor is not DMDc or EDMDc"
+            )
+
+        # Create FlattenTransformer and composed transform function for Y
+        # This ensures Y goes through same transformations as X (observable + flatten)
+        flatten_transformer = FlattenTransformer()
+        
+        def transform_y(y_data):
+            """Apply observable transform then flatten for Y."""
+            y_obs = self.observables.transform(y_data)
+            y_flat = flatten_transformer.transform(y_obs)
+            return y_flat
+        
+        if y is None:  # or isinstance(self.regressor, PyDMDRegressor):
+            # if there is only 1 trajectory OR regressor is PyDMD
+            y_flag = True
+            x, y, u = self.split_xy(x, u=u, offset=True)
+            
+            if isinstance(self.regressor, HAVOK):
+                regressor = self.regressor
+                y_flag = False
+            else:
+                regressor = EnsembleBaseRegressor(
+                    regressor=self.regressor,
+                    func=transform_y,  # Composed: observable + flatten
+                    inverse_func=self.observables.inverse,
+                )
+        else:
+            # multiple 1-step-trajectories (X and Y provided separately)
+            regressor = EnsembleBaseRegressor(
+                regressor=self.regressor,
+                func=transform_y,  # Composed: observable + flatten
+                inverse_func=self.observables.inverse,
+            )
+            y_flag = False
+
+        # Create pipeline with observable + flatten + regressor
+        # X will go through: Observable → Flatten → Regressor
+        # Y will go through: func (observable + flatten) → Regressor
+        steps = [
+            ("observables", self.observables),
+            ("flatten", FlattenTransformer()),
+            ("regressor", regressor),
+        ]
+        self._pipeline = Pipeline(steps)  # create `model` object using Pipeline
+
+        action = "ignore" if self.quiet else "default"
+        with catch_warnings():
+            filterwarnings(action, category=UserWarning)
+            if u is None:
+                self._pipeline.fit(x, y, regressor__dt=dt)
+            else:
+                self._pipeline.fit(x, y, regressor__u=u, regressor__dt=dt)
+            # update the third step with just the regressor, not the
+            # EnsembleBaseRegressor
+            if isinstance(self._pipeline.steps[2][1], EnsembleBaseRegressor):
+                self._pipeline.steps[2] = (
+                    self._pipeline.steps[2][0],
+                    self._pipeline.steps[2][1].regressor_,
+                )
+
+        # pykoopman's n_input/output_features are simply
+        # observables's input output features
+        # observable's input features are just the number
+        # of states. but the output features can be really high
+        self.n_input_features_ = self._pipeline.steps[0][1].n_input_features_
+        self.n_output_features_ = self._pipeline.steps[0][1].n_output_features_
+        
+        if hasattr(self._pipeline.steps[2][1], "n_control_features_"):
+            self.n_control_features_ = self._pipeline.steps[2][1].n_control_features_
+
+        # compute amplitudes
+        if isinstance(x, list):
+            self._amplitudes = None
+        elif y_flag:
+            # Extract data for amplitude computation, handling 3D/list structures
+            if hasattr(self.observables, "n_consumed_samples"):
+                n_samples_needed = 1 + self.observables.n_consumed_samples
+                
+                # Handle different input structures
+                if isinstance(x, np.ndarray) and x.ndim == 3:
+                    # 3D: (trials, time, features) - take from first trial
+                    x_for_amp = x[0, 0:n_samples_needed, :]
+                elif isinstance(x, list):
+                    # List - take from first element
+                    x_for_amp = x[0][0:n_samples_needed] if isinstance(x[0], np.ndarray) else x[0]
+                else:
+                    # 2D (original behavior)
+                    x_for_amp = x[0:n_samples_needed]
+                
+                self._amplitudes = np.abs(self.psi(x_for_amp.T))
+            else:
+                # Non-temporal observables
+                if isinstance(x, np.ndarray) and x.ndim == 3:
+                    # 3D: take first sample from first trial
+                    x_for_amp = x[0, 0:1, :]
+                elif isinstance(x, list):
+                    # List - take first sample from first element
+                    x_for_amp = x[0][0:1] if isinstance(x[0], np.ndarray) else x[0]
+                else:
+                    # 2D (original behavior)
+                    x_for_amp = x[0:1]
+                
+                self._amplitudes = np.abs(self.psi(x_for_amp.T))
+        else:
+            self._amplitudes = None
+
+        self.time = {
+            "tstart": 0,
+            "tend": dt * (self._pipeline.steps[2][1].n_samples_ - 1),
+            "dt": dt,
+        }
+
+        return self
+
+    def predict(self, x, u=None):
+        """
+        Predict the state one timestep in the future.
+
+        Args:
+            x: numpy.ndarray, shape (n_samples, n_input_features)
+                Current state.
+
+            u: numpy.ndarray, shape (n_samples, n_control_features),
+                optional (default None)
+                Time series of external actuation/control.
+
+        Returns:
+            x_next: numpy.ndarray, shape (n_samples, n_input_features)
+                Predicted state one timestep in the future.
+        """
+
+        x = validate_input(x)
+
+        check_is_fitted(self, "n_output_features_")
+        x_next = self.observables.inverse(self._step(x, u))
+        return x_next
+
+    def simulate(self, x0, u=None, n_steps=1):
+        """Simulate an initial state forward in time with the learned Koopman model.
+
+        Args:
+            x0: numpy.ndarray, shape (n_input_features,) or
+                (n_consumed_samples + 1, n_input_features)
+                Initial state from which to simulate.
+                If using TimeDelay observables, `x0` should contain
+                enough examples to compute all required time delays,
+                i.e., `n_consumed_samples + 1`.
+
+            u: numpy.ndarray, shape (n_samples, n_control_features),
+                optional (default None)
+                Time series of external actuation/control.
+
+            n_steps: int, optional (default 1)
+                Number of forward steps to be simulated.
+
+        Returns:
+            x: numpy.ndarray, shape (n_steps, n_input_features)
+                Simulated states.
+                Note that `x[0, :]` is one timestep ahead of `x0`.
+        """
+        check_is_fitted(self, "n_output_features_")
+        # Could have an option to only return the end state and not all
+        # intermediate states to save memory.
+
+        if x0.ndim == 1:  # handle non-time delay input but 1D accidently
+            x0 = x0.reshape(-1, 1)
+        elif x0.ndim == 2 and x0.shape[0] > 1:  # handle time delay input
+            x0 = x0.T
+        else:
+            raise TypeError("Check your initial condition shape!")
+        # x = empty((n_steps, self.n_input_features_), dtype=self.A.dtype)
+        y = empty((n_steps, self.A.shape[0]), dtype=self.W.dtype)
+
+        if u is None:
+            # lifted eigen space and move 1 step forward
+            y[0] = self.lamda @ self.psi(x0).flatten()
+
+            # iterate in the lifted space
+            for k in range(n_steps - 1):
+                # tmp = self.W @ self.lamda**(k+1) @ y[0].reshape(-1,1)
+                y[k + 1] = self.lamda @ y[k]
+            x = np.transpose(self.W @ y.T)
+            # x = x.astype(self.A.dtype)
+        else:
+            # lifted space (not eigen)
+            y[0] = self.A @ self.phi(x0).flatten() + self.B @ u[0]
+
+            # iterate in the lifted space
+            for k in range(n_steps - 1):
+                tmp = self.A @ y[k].reshape(-1, 1) + self.B @ u[k + 1].reshape(-1, 1)
+                y[k + 1] = tmp.flatten()
+            x = np.transpose(self.C @ y.T)
+            # x = x.astype(self.A.dtype)
+
+        if np.isrealobj(x0):
+            x = np.real(x)
+        return x
+
+    def get_feature_names(self, input_features=None):
+        """Get the names of the individual features constituting the observables.
+
+        Args:
+            input_features: list of string, length n_input_features,
+                optional (default None)
+                String names for input features, if available. By default,
+                the names "x0", "x1", ..., "xn_input_features" are used.
+
+        Returns:
+            output_feature_names: list of string, length n_output_features
+                Output feature names.
+        """
+        check_is_fitted(self, "n_input_features_")
+        return self.observables.get_feature_names(input_features=input_features)
+
+    def _step(self, x, u=None):
+        """Map x one timestep forward in the space of observables.
+
+        Args:
+            x: numpy.ndarray, shape (n_samples, n_input_features)
+                State vectors to be stepped forward.
+
+            u: numpy.ndarray, shape (n_samples, n_control_features),
+                optional (default None)
+                Time series of external actuation/control.
+
+        Returns:
+            X': numpy.ndarray, shape (n_samples, self.n_output_features_)
+                Observables one timestep after x.
+        """
+        check_is_fitted(self, "n_output_features_")
+
+        if u is None or self.n_control_features_ == 0:
+            if self.n_control_features_ > 0:
+                raise TypeError(
+                    "Model was fit using control variables, so u is required"
+                )
+            elif u is not None:
+                warn(
+                    "Control variables u were ignored because control variables were"
+                    " not used when the model was fit"
+                )
+            return self._pipeline.predict(X=x)
+        else:
+            if not isinstance(self.regressor, DMDc) and not isinstance(
+                self.regressor, EDMDc
+            ):
+                raise ValueError(
+                    "Control input u was passed, but self.regressor is not DMDc "
+                    "or EDMDc"
+                )
+            return self._pipeline.predict(X=x, u=u)
+
+    def phi(self, x_col):
+        """Compute the feature matrix phi(x) given `x_col`.
+
+        Args:
+            x_col: numpy.ndarray, shape (n_features, n_samples)
+                State vectors to be evaluated for phi.
+
+        Returns:
+            phi: numpy.ndarray, shape (n_samples, self.n_output_features_)
+                Value of phi evaluated at input `x_col`.
+        """
+        x = x_col.T
+        y = self.observables.transform(x)
+        phi = self._pipeline.steps[-1][1]._compute_phi(y.T)
+        return phi
+
+    def psi(self, x_col):
+        """Compute the Koopman psi(x) given `x_col`.
+
+        Args:
+            x_col: numpy.ndarray, shape (n_features, n_samples)
+                State vectors to be evaluated for psi.
+
+        Returns:
+            eigen_phi: numpy.ndarray, shape (n_samples, self.n_output_features_)
+                Value of psi evaluated at input `x_col`.
+        """
+        x = x_col.T
+        y = self.observables.transform(x)
+        ephi = self._pipeline.steps[-1][1]._compute_psi(y.T)
+        return ephi
+
+    @property
+    def A(self):
+        """Returns the state transition matrix `A`.
+
+        The state transition matrix A satisfies y' = Ay or y' = Ay + Bu,
+        respectively, where y = g(x) and y is a low-rank representation.
+        """
+        check_is_fitted(self, "_pipeline")
+        if isinstance(self.regressor, DMDBase):
+            raise ValueError("self.regressor " "has no A!")
+        if hasattr(self._pipeline.steps[-1][1], "state_matrix_"):
+            return self._pipeline.steps[-1][1].state_matrix_
+        else:
+            raise ValueError("self.regressor" "has no state_matrix")
+
+    @property
+    def B(self):
+        """Returns the control matrix `B`.
+
+        The control matrix (or vector) B satisfies y' = Ay + Bu.
+        y is the reduced system state.
+        """
+        check_is_fitted(self, "_pipeline")
+        if isinstance(self.regressor, DMDBase):
+            raise ValueError("this type of self.regressor has no B")
+        return self._pipeline.steps[-1][1].control_matrix_
+
+    @property
+    def C(self):
+        """Returns the measurement matrix (or vector) C.
+
+        The measurement matrix C satisfies x = C * phi_r.
+        """
+        check_is_fitted(self, "_pipeline")
+        # if not isinstance(self.observables, RadialBasisFunction):
+        #     raise ValueError("this type of self.observable has no C")
+        # return self._pipeline.steps[0][1].measurement_matrix_
+        measure_mat = self._pipeline.steps[0][1].measurement_matrix_
+        ur = self._pipeline.steps[-1][1].ur
+        C = measure_mat @ ur
+        return C
+
+    @property
+    def W(self):
+        """Returns the Koopman modes."""
+
+        check_is_fitted(self, "_pipeline")
+        # return self.C @ self._pipeline.steps[-1][1].unnormalized_modes
+        return self.C @ self._pipeline.steps[-1][1].eigenvectors_
+
+    @property
+    def _regressor_eigenvectors(self):
+        """Returns the eigenvectors of the regressor."""
+        check_is_fitted(self, "_pipeline")
+        return self._pipeline.steps[-1][1].eigenvectors_
+
+    @property
+    def lamda(self):
+        """Returns the discrete-time Koopman lambda obtained from spectral
+        decomposition."""
+        check_is_fitted(self, "_pipeline")
+        return np.diag(self._pipeline.steps[-1][1].eigenvalues_)
+
+    @property
+    def lamda_array(self):
+        """Returns the discrete-time Koopman lambda as an array."""
+        check_is_fitted(self, "_pipeline")
+        return np.diag(self.lamda) + 0j
+
+    @property
+    def continuous_lamda_array(self):
+        """Returns the continuous-time Koopman lambda as an array."""
+        check_is_fitted(self, "_pipeline")
+        return np.log(self.lamda_array) / self.time["dt"]
+
+    @property
+    def ur(self):
+        """Returns the projection matrix Ur."""
+        check_is_fitted(self, "_pipeline")
+        return self._pipeline.steps[-1][1].ur
+
+    def validity_check(self, t, x):
+        """Perform a validity check of eigenfunctions.
+
+        The validity check tests the linearity of eigenfunctions phi(x(t)) == phi(x(0))
+        * exp(lambda*t).
+
+        Args:
+            t: numpy.ndarray, shape (n_samples,)
+                Time vector.
+            x: numpy.ndarray, shape (n_samples, n_input_features)
+                State vectors to be checked.
+
+        Returns:
+            efun_index: list
+                Sorted indices of eigenfunctions based on linearity error.
+            linearity_error: list
+                Linearity error for each eigenfunction.
+        """
+
+        psi = self.psi(x.T)
+        omega = np.log(np.diag(self.lamda) + 0j) / self.time["dt"]
+
+        # omega = self.eigenvalues_continuous
+        linearity_error = []
+        for i in range(self.lamda.shape[0]):
+            linearity_error.append(
+                np.linalg.norm(psi[i, :] - np.exp(omega[i] * t) * psi[i, 0:1])
+            )
+        sort_idx = np.argsort(linearity_error)
+        efun_index = np.arange(len(linearity_error))[sort_idx]
+        linearity_error = [linearity_error[i] for i in sort_idx]
+        return efun_index, linearity_error
+
+    def score(self, x, y=None, cast_as_real=True, metric=r2_score, **metric_kws):
+        """Score the model predictions for the next timestep.
+
+        Parameters:
+            x: numpy.ndarray, shape (n_samples, n_input_features)
+                State measurements.
+            y: numpy.ndarray, shape (n_samples, n_input_features), optional
+                (default None). State measurements one timestep in the future.
+            cast_as_real: bool, optional (default True)
+                Whether to take the real part of predictions when computing the score.
+            metric: callable, optional (default r2_score)
+                The metric function used to score the model predictions.
+            metric_kws: dict, optional
+                Optional parameters to pass to the metric function.
+
+        Returns:
+            score: float
+                Metric function value for the model predictions at the next timestep.
+        """
+        check_is_fitted(self, "n_output_features_")
+        x = validate_input(x)
+
+        if isinstance(self.observables, TimeDelay):
+            n_consumed_samples = self.observables.n_consumed_samples
+
+            # User may pass in too-large
+            if y is not None and len(y) == len(x):
+                warn(
+                    f"The first {n_consumed_samples} entries of y were ignored because "
+                    "TimeDelay obesrvables were used."
+                )
+                y = y[n_consumed_samples:]
+        else:
+            n_consumed_samples = 0
+
+        if y is None:
+            if cast_as_real:
+                return metric(
+                    x[n_consumed_samples + 1 :].real,
+                    self.predict(x[:-1]).real,
+                    **metric_kws,
+                )
+            else:
+                return metric(
+                    x[n_consumed_samples + 1 :], self.predict(x[:-1]), **metric_kws
+                )
+        else:
+            if cast_as_real:
+                return metric(y.real, self.predict(x).real, **metric_kws)
+            else:
+                return metric(y, self.predict(x), **metric_kws)
+
+    def _observable(self):
+        """Returns the observable transformation."""
+        return self._pipeline.steps[0][1]
+
+    def _regressor(self):
+        """Returns the fitted regressor."""
+        # this can access the fitted regressor
+        # todo: future we need to figure out a way to do time delay multiple
+        #  trajectories DMD
+        # my idea is to manually call xN observables then concate the data to let
+        # the _regressor.fit to update the model coefficients.
+        # call this function with _regressor()
+        return self._pipeline.steps[2][1]
+    def split_xy(self, X, u=None, offset=True):
+        """
+        Split data into X and Y pairs with temporal offset.
+        
+        Preserves input structure (list/2D/3D) so observables can handle
+        trial boundaries appropriately. Does NOT flatten or transform -
+        just performs the temporal split.
+        
+        Args:
+            X: Input data (1D, 2D array, 3D array, or list of arrays)
+            u: Control input (same shape as X), optional
+            offset: If True, split with temporal offset X[:-1], X[1:]
+                    If False, return (X, X, u) - used when Y provided separately
+        
+        Returns:
+            Tuple (X_split, Y_split, u_split) preserving input structure
+        """
+        if not offset:
+            # No split needed when Y provided separately
+            return X, X, u
+        
+        s1, s2 = -1, 1  # X[:-1], X[1:]
+        
+        if isinstance(X, np.ndarray):
+            if X.ndim == 1:
+                X = X.reshape(-1, 1)
+            
+            if X.ndim == 2:
+                self.n_samples_, self.n_input_features_ = X.shape
+                self.n_trials_ = 1
+                u_split = u[:s1] if u is not None else None
+                return X[:s1], X[s2:], u_split
+            
+            elif X.ndim == 3:
+                self.n_trials_, self.n_samples_, self.n_input_features_ = X.shape
+                # Keep 3D structure: (trials, time-1, features)
+                u_split = u[:, :s1, :] if u is not None else None
+                return X[:, :s1, :], X[:, s2:, :], u_split
+        
+        elif isinstance(X, list):
+            # Recursively process each element in list
+            X_list, Y_list, u_list = [], [], []
+            for i, x in enumerate(X):
+                u_elem = u[i] if u is not None else None
+                x_split, y_split, u_split = self.split_xy(x, u=u_elem, offset=offset)
+                X_list.append(x_split)
+                Y_list.append(y_split)
+                u_list.append(u_split)
+            u_result = u_list if u is not None else None
+            return X_list, Y_list, u_result
+        
+        # Fallback for unknown types
+        return X, X, u

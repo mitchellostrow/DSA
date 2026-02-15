@@ -1,8 +1,15 @@
-from DSA.dsa import DSA
+__version__ = "2.0.0"
+
+from DSA.dsa import DSA, ControllabilitySimilarityTransformDistConfig, GeneralizedDSA, InputDSA, SimilarityTransformDistConfig
+from DSA.dsa import DefaultDMDConfig as DMDConfig
+from DSA.dsa import pyKoopmanDMDConfig, SubspaceDMDcConfig, DMDcConfig
+from DSA.dsa import SimilarityTransformDistConfig, ControllabilitySimilarityTransformDistConfig
 from DSA.dmd import DMD
-from DSA.kerneldmd import KernelDMD
+from DSA.dmdc import DMDc
+from DSA.subspace_dmdc import SubspaceDMDc
 from DSA.simdist import SimilarityTransformDist
+from DSA.simdist_controllability import ControllabilitySimilarityTransformDist
 from DSA.stats import *
-from DSA.sweeps import *
+from DSA.sweeps import PyKoopmanSweeper, DefaultSweeper
 from DSA.preprocessing import *
-from DSA.resdmd import *
+from DSA.resdmd import ResidualComputer
