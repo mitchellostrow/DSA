@@ -332,11 +332,8 @@ class GeneralizedDSA:
         if isinstance(dmd_config,type):
             dmd_config = dmd_config()
         if is_dataclass(dmd_config):
-            # for dataclasses with default entries, __dataclass_fields__ ends up being empty
-            # dmd_config = asdict(dmd_config) ends up with an empty dictionary
-            #hardcode fix here
-            dmd_config = {k: v for k, v in dmd_config.__class__.__dict__.items() if not k.startswith("__") and not callable(v)}
-                
+            dmd_config = asdict(dmd_config)
+             
         self.dmd_config = (
             {}
         )  
