@@ -7,7 +7,7 @@ from typing import Literal
 import torch
 import numpy as np
 from omegaconf.listconfig import ListConfig
-import tqdm
+from tqdm.auto import tqdm as _tqdm
 from joblib import Parallel, delayed
 from dataclasses import dataclass, is_dataclass, asdict
 import DSA.pykoopman as pykoopman
@@ -15,6 +15,16 @@ import pydmd
 from DSA.pykoopman.regression import DMDc, EDMDc
 from typing import Union, Mapping, Any, ClassVar, Final
 import warnings
+
+
+def _fit_dmd_worker(dmd):
+    dmd.fit()
+    return dmd
+
+
+def _fit_dmd_with_data_worker(dmd, X):
+    dmd.fit(X)
+    return dmd
 
 
 CAST_TYPES = {
@@ -552,24 +562,24 @@ class GeneralizedDSA:
             )  # -1 means use all available cores
 
             if self.dmd_api_source == "local_dmd":
-                for dmd_sets in self.dmds:
-                    if self.verbose:
-                        print(
-                            f"Fitting {len(dmd_sets)} DMDs in parallel with {n_jobs} jobs"
-                        )
-                    Parallel(n_jobs=n_jobs)(
-                        delayed(lambda dmd: dmd.fit())(dmd) for dmd in dmd_sets
+                for idx, dmd_sets in enumerate(self.dmds):
+                    gen = Parallel(n_jobs=n_jobs, return_as="generator_unordered")(
+                        delayed(_fit_dmd_worker)(dmd) for dmd in dmd_sets
                     )
-            else:
-                for dmd_list, dat in zip(self.dmds, self.data):
                     if self.verbose:
-                        print(
-                            f"Fitting {len(dmd_list)} DMDs in parallel with {n_jobs} jobs"
-                        )
-                    Parallel(n_jobs=n_jobs)(
-                        delayed(lambda dmd, X: dmd.fit(X))(dmd, Xi)
+                        gen = _tqdm(gen, total=len(dmd_sets),
+                                        desc=f"Fitting DMDs ({n_jobs} jobs)")
+                    self.dmds[idx] = list(gen)
+            else:
+                for idx, (dmd_list, dat) in enumerate(zip(self.dmds, self.data)):
+                    gen = Parallel(n_jobs=n_jobs, return_as="generator_unordered")(
+                        delayed(_fit_dmd_with_data_worker)(dmd, Xi)
                         for dmd, Xi in zip(dmd_list, dat)
                     )
+                    if self.verbose:
+                        gen = _tqdm(gen, total=len(dmd_list),
+                                        desc=f"Fitting DMDs ({n_jobs} jobs)")
+                    self.dmds[idx] = list(gen)
         else:
             # Sequential processing
             if self.dmd_api_source == "local_dmd":
@@ -577,7 +587,7 @@ class GeneralizedDSA:
                     loop = (
                         dmd_sets
                         if not self.verbose
-                        else tqdm.tqdm(dmd_sets, desc="Fitting DMDs")
+                        else _tqdm(dmd_sets, desc="Fitting DMDs")
                     )
                     for dmd in loop:
                         dmd.fit()
@@ -586,7 +596,7 @@ class GeneralizedDSA:
                     loop = (
                         zip(dmd_list, dat)
                         if not self.verbose
-                        else tqdm.tqdm(zip(dmd_list, dat), desc="Fitting DMDs")
+                        else _tqdm(zip(dmd_list, dat), desc="Fitting DMDs")
                     )
                     for dmd, Xi in loop:
                         dmd.fit(Xi)
@@ -792,7 +802,7 @@ class GeneralizedDSA:
                 print("Pre-computing eigenvalues for Wasserstein distance...")
         
         cache_iter = lambda items, desc: (
-            tqdm.tqdm(items, desc=desc) if self.verbose else items
+            _tqdm(items, desc=desc) if self.verbose else items
         )
         # Compute cached compare objects once per DMD. In self-pairwise mode, X and Y
         # refer to the same DMD list, so avoid doubling expensive work.
@@ -814,9 +824,6 @@ class GeneralizedDSA:
             if self.method == "self-pairwise" and j >= i:
                 return None
 
-            if self.verbose and self.n_jobs != 1:
-                print(f"computing similarity between DMDs {i} and {j}")
-
             simdist_args = [
                 self.cached_compare_objects[0][i],
                 self.cached_compare_objects[1][j],
@@ -832,9 +839,6 @@ class GeneralizedDSA:
             
             sim = self.simdist.fit_score(*simdist_args)
 
-            if self.verbose and self.n_jobs != 1:
-                print(f"finished similarity between DMDs {i} and {j}")
-
             return (i, j, sim)
 
         pairs = []
@@ -843,21 +847,20 @@ class GeneralizedDSA:
                 if not (self.method == "self-pairwise" and j >= i):
                     pairs.append((i, j))
 
-        if self.n_jobs != 1:
+        if self.n_jobs != 1 and self.simdist.score_method != 'wasserstein': #wasserstein is already fast
             n_jobs = self.n_jobs if self.n_jobs > 0 else -1
-            if self.verbose:
-                print(
-                    f"Computing {len(pairs)} DMD similarities in parallel with {n_jobs} jobs"
-                )
-
-            results = Parallel(n_jobs=n_jobs)(
+            gen = Parallel(n_jobs=n_jobs, return_as="generator_unordered")(
                 delayed(compute_similarity)(i, j) for i, j in pairs
             )
+            if self.verbose:
+                gen = _tqdm(gen, total=len(pairs),
+                                desc=f"Scoring DMD pairs ({n_jobs} jobs)")
+            results = list(gen)
         else:
             loop = (
                 pairs
                 if not self.verbose
-                else tqdm.tqdm(pairs, desc="Computing DMD similarities")
+                else _tqdm(pairs, desc="Scoring DMD pairs")
             )
             results = [compute_similarity(i, j) for i, j in loop]
 
