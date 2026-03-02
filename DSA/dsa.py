@@ -153,13 +153,13 @@ class SimilarityTransformDistConfig:
             Default is 1500.
         score_method (Literal["angular", "euclidean","wasserstein"]): Method for computing the distance score.
             'angular' uses angular distance, 'euclidean' uses Euclidean distance.
-            Default is "angular".
+            Default is "wasserstein".
         lr (float): Learning rate for the optimization algorithm.
             Default is 5e-3.
     """
 
     iters: int = 1500
-    score_method: Literal["angular", "euclidean", "wasserstein"] = "angular"
+    score_method: Literal["angular", "euclidean", "wasserstein"] = "wasserstein"
     lr: float = 5e-3
     #class variable, set as final to indicate that it's fixed and immutable
     compare: ClassVar[Final] = "state" 
@@ -505,7 +505,7 @@ class GeneralizedDSA:
             simdist_class = SimilarityTransformDist
             # Extract only parameters relevant to SimilarityTransformDist
             adapted_config = {
-                'score_method': simdist_config.get('score_method', 'angular'),
+                'score_method': simdist_config.get('score_method', 'wasserstein'),
                 'iters': simdist_config.get('iters', 1500),
                 'lr': simdist_config.get('lr', 5e-3),
                 'device': simdist_config.get('device', self.device),
@@ -914,7 +914,7 @@ class DSA(GeneralizedDSA):
         verbose=False,
         n_jobs=1,
         # simdist parameters
-        score_method: Literal["angular", "euclidean","wasserstein"] = "angular",
+        score_method: Literal["angular", "euclidean","wasserstein"] = "wasserstein",
         iters: int = 1500,
         lr: float = 5e-3,
         **dmd_kwargs,
