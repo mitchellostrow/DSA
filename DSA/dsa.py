@@ -563,7 +563,7 @@ class GeneralizedDSA:
 
             if self.dmd_api_source == "local_dmd":
                 for idx, dmd_sets in enumerate(self.dmds):
-                    gen = Parallel(n_jobs=n_jobs, return_as="generator_unordered")(
+                    gen = Parallel(n_jobs=n_jobs, return_as="generator")(
                         delayed(_fit_dmd_worker)(dmd) for dmd in dmd_sets
                     )
                     if self.verbose:
@@ -572,7 +572,7 @@ class GeneralizedDSA:
                     self.dmds[idx] = list(gen)
             else:
                 for idx, (dmd_list, dat) in enumerate(zip(self.dmds, self.data)):
-                    gen = Parallel(n_jobs=n_jobs, return_as="generator_unordered")(
+                    gen = Parallel(n_jobs=n_jobs, return_as="generator")(
                         delayed(_fit_dmd_with_data_worker)(dmd, Xi)
                         for dmd, Xi in zip(dmd_list, dat)
                     )
