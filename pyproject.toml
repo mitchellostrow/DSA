@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dsa-metric"
-version = "2.0.0"
+version = "2.0.1"
 authors = [
   { name="Mitchell Ostrow", email="ostrow@mit.edu" },
 ]
