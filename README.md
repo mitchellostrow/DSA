@@ -1,4 +1,4 @@
-# Generalized DSA
+# Generalized DSA  [![PyPI Downloads](https://static.pepy.tech/personalized-badge/dsa-metric?period=total&units=INTERNATIONAL_SYSTEM&left_color=BLACK&right_color=GREEN&left_text=downloads)](https://pepy.tech/projects/dsa-metric)
 Computational techniques for Dynamical Similarity Analysis. First introduced in,
 
 1. "Beyond Geometry: Comparing the Temporal Structure of Computation in Neural Circuits via Dynamical Similarity Analysis"
