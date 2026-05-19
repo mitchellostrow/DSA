@@ -13,7 +13,7 @@ from dataclasses import dataclass, is_dataclass, asdict
 import DSA.pykoopman as pykoopman
 import pydmd
 from DSA.pykoopman.regression import DMDc, EDMDc
-from typing import Union, Mapping, Any, ClassVar, Final
+from typing import Union, Mapping, Any, ClassVar
 import warnings
 
 
@@ -161,8 +161,7 @@ class SimilarityTransformDistConfig:
     iters: int = 1500
     score_method: Literal["angular", "euclidean", "wasserstein"] = "wasserstein"
     lr: float = 5e-3
-    #class variable, set as final to indicate that it's fixed and immutable
-    compare: ClassVar[Final] = "state" 
+    compare: ClassVar[str] = "state" 
 
 @dataclass()
 class ControllabilitySimilarityTransformDistConfig:
