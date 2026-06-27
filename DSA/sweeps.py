@@ -70,6 +70,8 @@ class BaseSweeper(ABC):
     control_data : np.ndarray, optional
         Control/actuation data for controlled systems (default: None).
         Will be split into train/test sets matching the data split.
+    save_models: bool, False
+        whether to save each dmd model in the sweep. Defaults to false for memory efficiency
     **model_kwargs
         Additional keyword arguments passed to the model constructor.
     
@@ -95,7 +97,6 @@ class BaseSweeper(ABC):
         Non-normality values for each parameter combination (after sweep).
     residuals : np.ndarray or None
         Residual values for each parameter combination (after sweep, if computed).
-    fitted_models : list of lists
         Fitted model objects for each parameter combination (after sweep).
     """
     
@@ -110,6 +111,7 @@ class BaseSweeper(ABC):
         reseed: int = 1,
         compute_residuals: bool = False,
         control_data: np.ndarray = None,
+        save_models: bool = False,
         **model_kwargs
     ):
         self.data = data
@@ -120,6 +122,7 @@ class BaseSweeper(ABC):
         self.train_frac = train_frac
         self.reseed = reseed
         self.compute_residuals = compute_residuals
+        self.save_models = save_models
         self.model_kwargs = model_kwargs
         self.control_data = control_data
         
@@ -193,7 +196,8 @@ class BaseSweeper(ABC):
         self._mses = np.full((n1, n2), np.nan)
         self._nnormals = np.full((n1, n2), np.nan)
         self._residuals = np.full((n1, n2), np.nan) if self.compute_residuals else None
-        self._fitted_models = [[None for _ in range(n2)] for _ in range(n1)]
+        if self.save_models:
+            self._fitted_models = [[None for _ in range(n2)] for _ in range(n1)]
         
         for i, p1 in tqdm(enumerate(self.param1_values), total=n1, desc="Sweeping"):
             for j, p2 in enumerate(self.param2_values):
@@ -201,7 +205,8 @@ class BaseSweeper(ABC):
                     continue
                 # try:
                 model = self.make_model(p1, p2)
-                self._fitted_models[i][j] = model
+                if self.save_models:
+                    self._fitted_models[i][j] = model
                 
                 pred = self.predict(model, self.test_data, self.reseed)
                 pred_np = self._to_numpy(pred)
@@ -277,7 +282,7 @@ class BaseSweeper(ABC):
     @property
     def fitted_models(self) -> List[List]:
         self._check_swept()
-        return self._fitted_models
+        return self._fitted_models if self.save_models else "Memory efficient mode, no models saved"
     
     def _check_swept(self):
         if not self._swept:
