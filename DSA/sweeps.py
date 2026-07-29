@@ -6,7 +6,8 @@ for both local DMD and PyKoopman models.
 """
 
 import numpy as np
-from tqdm import tqdm
+from tqdm.auto import tqdm as _tqdm
+from joblib import Parallel, delayed
 from .dmd import DMD
 from .dmdc import DMDc
 from .subspace_dmdc import SubspaceDMDc
@@ -37,6 +38,34 @@ def split_train_test(data, train_frac=0.8):
         test_data = data[int(train_frac * data.shape[0]):] if train_frac < 1.0 else train_data
         dim = data.shape[-1]
     return train_data, test_data, dim
+
+
+def _sweep_single_point(sweeper, i, p1, j, p2):
+    """Worker function for parallel sweep. Must be module-level for pickling."""
+    model = sweeper.make_model(p1, p2)
+
+    pred = sweeper.predict(model, sweeper.test_data, sweeper.reseed)
+    pred_np = sweeper._to_numpy(pred)
+    test_np = sweeper._to_numpy(sweeper.test_data)
+    pred_np, test_np = sweeper._align_predictions(pred_np, test_np)
+
+    rank = sweeper.get_rank(model)
+    stats = compute_all_stats(test_np, pred_np, rank)
+
+    A = sweeper.get_state_matrix(model)
+    A_np = sweeper._to_numpy(A)
+    nnormal = measure_nonnormality_transpose(A_np)
+
+    residual = np.nan
+    if sweeper.compute_residuals:
+        rc = ResidualComputer(model, sweeper.test_data, sweeper.test_control)
+        residual = rc.get_average_residual()
+
+    return {
+        'i': i, 'j': j, 'model': model,
+        'aic': stats["AIC"], 'mase': stats["MASE"], 'mse': stats["MSE"],
+        'nnormal': nnormal, 'residual': residual,
+    }
 
 
 class BaseSweeper(ABC):
@@ -111,9 +140,10 @@ class BaseSweeper(ABC):
         reseed: int = 1,
         compute_residuals: bool = False,
         control_data: np.ndarray = None,
-        save_models: bool = False,
+        n_jobs: int = 1,
         **model_kwargs
     ):
+        self.n_jobs = n_jobs
         self.data = data
         self.param1_name = param1_name
         self.param1_values = np.array(param1_values)
@@ -122,7 +152,6 @@ class BaseSweeper(ABC):
         self.train_frac = train_frac
         self.reseed = reseed
         self.compute_residuals = compute_residuals
-        self.save_models = save_models
         self.model_kwargs = model_kwargs
         self.control_data = control_data
         
@@ -196,47 +225,43 @@ class BaseSweeper(ABC):
         self._mses = np.full((n1, n2), np.nan)
         self._nnormals = np.full((n1, n2), np.nan)
         self._residuals = np.full((n1, n2), np.nan) if self.compute_residuals else None
-        if self.save_models:
-            self._fitted_models = [[None for _ in range(n2)] for _ in range(n1)]
+        # self._fitted_models = [[None for _ in range(n2)] for _ in range(n1)]
         
-        for i, p1 in tqdm(enumerate(self.param1_values), total=n1, desc="Sweeping"):
-            for j, p2 in enumerate(self.param2_values):
-                if not self._is_valid_param_combo(p1, p2):
-                    continue
-                # try:
-                model = self.make_model(p1, p2)
-                if self.save_models:
-                    self._fitted_models[i][j] = model
-                
-                pred = self.predict(model, self.test_data, self.reseed)
-                pred_np = self._to_numpy(pred)
-                test_np = self._to_numpy(self.test_data)
-                pred_np, test_np = self._align_predictions(pred_np, test_np)
-                
-                rank = self.get_rank(model)
-                stats = compute_all_stats(test_np, pred_np, rank)
-                
-                self._aics[i, j] = stats["AIC"]
-                self._mases[i, j] = stats["MASE"]
-                self._mses[i, j] = stats["MSE"]
-                
-                A = self.get_state_matrix(model)
-                A_np = self._to_numpy(A)
-                self._nnormals[i, j] = measure_nonnormality_transpose(A_np)
-                
-                if self.compute_residuals:
-                    # try:
-                    rc = ResidualComputer(model, self.test_data, self.test_control)
-                    self._residuals[i, j] = rc.get_average_residual()
-                    # except Exception as e:
-                        # warnings.warn(f"Residual computation failed: {e}")
-                        # self._residuals[i, j] = np.nan
-                # except Exception as e:
-                    # warnings.warn(f"Failed for {self.param1_name}={p1}, {self.param2_name}={p2}: {e}")
-                    # continue
+        valid_combos = [
+            (i, p1, j, p2)
+            for i, p1 in enumerate(self.param1_values)
+            for j, p2 in enumerate(self.param2_values)
+            if self._is_valid_param_combo(p1, p2)
+        ]
+        
+        if self.n_jobs != 1 and len(valid_combos) > 1:
+            n_jobs = self.n_jobs if self.n_jobs > 0 else -1
+            gen = Parallel(n_jobs=n_jobs, return_as="generator_unordered")(
+                delayed(_sweep_single_point)(self, i, p1, j, p2)
+                for i, p1, j, p2 in valid_combos
+            )
+            gen = _tqdm(gen, total=len(valid_combos),
+                        desc=f"Sweeping ({n_jobs} jobs)")
+            for result in gen:
+                self._store_result(result)
+        else:
+            for i, p1, j, p2 in _tqdm(valid_combos, desc="Sweeping"):
+                result = _sweep_single_point(self, i, p1, j, p2)
+                self._store_result(result)
         
         self._swept = True
         return self
+    
+    def _store_result(self, result: dict) -> None:
+        """Store a single sweep result into the arrays."""
+        i, j = result['i'], result['j']
+        # self._fitted_models[i][j] = result['model']
+        self._aics[i, j] = result['aic']
+        self._mases[i, j] = result['mase']
+        self._mses[i, j] = result['mse']
+        self._nnormals[i, j] = result['nnormal']
+        if self._residuals is not None:
+            self._residuals[i, j] = result['residual']
     
     def _to_numpy(self, x) -> np.ndarray:
         if hasattr(x, 'cpu'):
@@ -279,10 +304,10 @@ class BaseSweeper(ABC):
         self._check_swept()
         return self._residuals
     
-    @property
-    def fitted_models(self) -> List[List]:
-        self._check_swept()
-        return self._fitted_models if self.save_models else "Memory efficient mode, no models saved"
+    # @property
+    # def fitted_models(self) -> List[List]:
+    #     self._check_swept()
+        # return self._fitted_models
     
     def _check_swept(self):
         if not self._swept:

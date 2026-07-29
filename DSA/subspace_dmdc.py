@@ -233,7 +233,12 @@ class SubspaceDMDc(BaseDMD):
                 R22 = L[dim_uf:dim_uf + dim_zp, dim_uf:dim_uf + dim_zp]
                 R32 = L[dim_uf + dim_zp:, dim_uf:dim_uf + dim_zp]
                 
-                O = R32 @ torch.linalg.pinv(R22) @ Z_p
+                R22T_R22 = R22.T @ R22
+                R22_reg_inv = torch.linalg.solve(
+                    R22T_R22 + lamb * torch.eye(R22T_R22.shape[0], device=R22.device, dtype=R22.dtype),
+                    R22.T,
+                )
+                O = R32 @ R22_reg_inv @ Z_p
                 Uo, s, Vt = torch.linalg.svd(O, full_matrices=False)
             else:
                 Q, R_upper = np.linalg.qr(H.T, mode='reduced')
@@ -242,7 +247,12 @@ class SubspaceDMDc(BaseDMD):
                 R22 = L[dim_uf:dim_uf + dim_zp, dim_uf:dim_uf + dim_zp]
                 R32 = L[dim_uf + dim_zp:, dim_uf:dim_uf + dim_zp]
                 
-                O = R32 @ np.linalg.pinv(R22) @ Z_p
+                R22T_R22 = R22.T @ R22
+                R22_reg_inv = np.linalg.solve(
+                    R22T_R22 + lamb * np.eye(R22T_R22.shape[0]),
+                    R22.T,
+                )
+                O = R32 @ R22_reg_inv @ Z_p
                 Uo, s, Vt = np.linalg.svd(O, full_matrices=False)
             
             return Uo, s, Vt

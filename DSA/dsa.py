@@ -380,7 +380,6 @@ class GeneralizedDSA:
 
         if self.dmd_api_source == "local_dmd":
             self.dmds = []
-            # TODO: test this for single numpy array
             for i, (dat, control_dat) in enumerate(zip(self.data, self.control_data)):
                 dmd_list = []
                 if control_dat is None:

@@ -108,20 +108,22 @@ class BaseDMD(ABC):
 
     def _process_single_dataset(self, data):
         """Process a single dataset, handling numpy arrays, tensors, and lists."""
+        def _safe_from_numpy(d):
+            if isinstance(d, np.ndarray):
+                try:
+                    return torch.from_numpy(d)
+                except TypeError:
+                    return torch.tensor(d)
+            return d
+
         if isinstance(data, list):
             try:
                 # Attempt to convert to a single tensor if possible (non-ragged)
-                processed_data = [
-                    torch.from_numpy(d) if isinstance(d, np.ndarray) else d
-                    for d in data
-                ]
+                processed_data = [_safe_from_numpy(d) for d in data]
                 return torch.stack(processed_data), False
             except (RuntimeError, ValueError):
                 # Handle ragged lists
-                processed_data = [
-                    torch.from_numpy(d) if isinstance(d, np.ndarray) else d
-                    for d in data
-                ]
+                processed_data = [_safe_from_numpy(d) for d in data]
                 # Check for consistent last dimension
                 n_features = processed_data[0].shape[-1]
                 if not all(d.shape[-1] == n_features for d in processed_data):
@@ -131,7 +133,15 @@ class BaseDMD(ABC):
                 return processed_data, True
 
         elif isinstance(data, np.ndarray):
-            return torch.from_numpy(data.copy()), False
+            arr = data.copy()
+            # numpy 2.x compatibility with old torch
+            if not isinstance(arr, np.ndarray):
+                arr = np.array(arr)
+            arr = np.require(arr, dtype=arr.dtype, requirements=['C_CONTIGUOUS'])
+            try:
+                return torch.from_numpy(arr), False
+            except TypeError:
+                return torch.tensor(arr), False
 
         return data, False
 
