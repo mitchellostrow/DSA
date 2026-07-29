@@ -524,7 +524,8 @@ def measure_nonnormality_transpose(A):
         A = A.cpu().detach().numpy()
     AtA = A.T @ A
     AAt = A @ A.T
-    return np.linalg.norm(AtA - AAt)
+    # return np.linalg.norm(AtA - AAt,ord='fro') / A.shape[0]
+    return np.linalg.norm(AtA - AAt,ord='fro') / (np.linalg.norm(A,ord='fro')**2)
 
 
 def measure_transient_growth(A):

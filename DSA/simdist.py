@@ -272,7 +272,7 @@ class SimilarityTransformDist:
             device = a.device
             # a = a  # .cpu()
             # b = b  # .cpu()
-            self.M = dist(a, b)  # .numpy()
+            self.M = dist(a, b,metric='euclidean')  # .numpy()
             if wasserstein_weightings is not None:
                 a, b = wasserstein_weightings
                 assert isinstance(a, (torch.Tensor, np.ndarray))
