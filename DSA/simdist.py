@@ -272,14 +272,14 @@ class SimilarityTransformDist:
             device = a.device
             # a = a  # .cpu()
             # b = b  # .cpu()
-            self.M = dist(a, b,metric='euclidean')  # .numpy()
+            self.M = dist(a, b,metric='sqeuclidean')  # .numpy()
             if wasserstein_weightings is not None:
                 a, b = wasserstein_weightings
                 assert isinstance(a, (torch.Tensor, np.ndarray))
                 assert isinstance(b, (torch.Tensor, np.ndarray))
                 assert a.shape[0] == self.M.shape[0]
                 assert b.shape[0] == self.M.shape[1]
-                assert a.sum() == b.sum() == 1
+                assert torch.allclose(a.sum(), torch.tensor(1.0))
             else:
                 a, b = (
                     torch.ones(a.shape[0]) / a.shape[0],
@@ -290,7 +290,7 @@ class SimilarityTransformDist:
             if self.differentiable:
                 self.score_star = sinkhorn2(
                     a, b, self.M, reg=self.sinkhorn_reg
-                )
+                ) + 1e-20
                 # No transport plan needed for differentiable mode
                 self.C_star = None
             else:
@@ -303,6 +303,7 @@ class SimilarityTransformDist:
                     self.C_star, dim=1, keepdim=True
                 )
             # wasserstein_distance(A.cpu().numpy(),B.cpu().numpy())
+            self.score_star = torch.sqrt(self.score_star) #
 
         else:
             self.losses, self.C_star, self.sim_net = self.optimize_C(
