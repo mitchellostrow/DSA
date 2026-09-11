@@ -8,7 +8,7 @@ https://arxiv.org/abs/2306.10168
 Abstract:
 How can we tell whether two neural networks are utilizing the same internal processes for a particular computation? This question is pertinent for multiple subfields of both neuroscience and machine learning, including neuroAI, mechanistic interpretability, and brain-machine interfaces. Standard approaches for comparing neural networks focus on the spatial geometry of latent states. Yet in recurrent networks, computations are implemented at the level of neural dynamics, which do not have a simple one-to-one mapping with geometry. To bridge this gap, we introduce a novel similarity metric that compares two systems at the level of their dynamics. Our method incorporates two components: Using recent advances in data-driven dynamical systems theory, we learn a high-dimensional linear system that accurately captures core features of the original nonlinear dynamics. Next, we compare these linear approximations via a novel extension of Procrustes Analysis that accounts for how vector fields change under orthogonal transformation. Via four case studies, we demonstrate that our method effectively identifies and distinguishes dynamic structure in recurrent neural networks (RNNs), whereas geometric methods fall short. We additionally show that our method can distinguish learning rules in an unsupervised manner. Our method therefore opens the door to novel data-driven analyses of the temporal structure of neural computation, and to more rigorous testing of RNNs as models of the brain.
 
-and now including code from our new paper: 
+and now including code from our new papers: 
 
 2. "InputDSA: Demixing then comparing recurrent and externally driven dynamics
 
@@ -17,6 +17,13 @@ https://www.arxiv.org/abs/2510.25943
 Abstract:
 In control problems and basic scientific modeling, it is important to compare observations with dynamical simulations. For example, comparing two neural systems can shed light on the nature of emergent computations in the brain and deep neural networks. Recently, (Ostrow et al., 2023) introduced Dynamical Similarity Analysis (DSA), a method to measure the similarity of two systems based on their state dynamics rather than geometry or topology. However, DSA does not consider how inputs affect the dynamics, meaning that two similar systems, if driven differently, may be classified as different. Because real-world dynamical systems are rarely autonomous, it is important to account for the effects of input drive. To this end, we introduce a novel metric for comparing both intrinsic (recurrent) and input-driven dynamics, called InputDSA (iDSA). InputDSA extends the DSA framework by estimating and comparing both input and intrinsic dynamic operators using a novel variant of Dynamic Mode Decomposition with control (DMDc) based on subspace identification. We demonstrate that InputDSA can successfully compare partially observed, input-driven systems from noisy data. We show that when the true inputs are unknown, surrogate inputs can be substituted without a major deterioration in similarity estimates. We apply InputDSA on Recurrent Neural Networks (RNNs) trained with Deep Reinforcement Learning, identifying that high-performing networks are dynamically similar to one another, while low-performing networks are more diverse. Lastly, we apply InputDSA to neural data recorded from rats performing a cognitive task, demonstrating that it identifies a transition from input-driven evidence accumulation to intrinsically- driven decision-making. Our work demonstrates that InputDSA is a robust and efficient method for comparing intrinsic dynamics and the effect of external input
 on dynamical systems
+
+3. "A metric for comparing complex systems by their dynamics"
+
+   https://www.biorxiv.org/content/10.64898/2026.07.16.738953v2.full#sec-12
+
+Abstract:
+Comparisons are fundamental to science: experiment against model, one organism against another, a system against itself across time. Because many systems, from brains to climate, are characterized by how they evolve in time, it is a natural goal to compare their dynamics. Dynamical systems comparison is well defined, but has been intractable for nonlinear, high-dimensional, noisy, and partially observed data. As a result, standard comparison methods have focused on the geometry or topology of data. Here we present Dynamical Similarity Analysis (DSA), a class of metrics to compare systems by their temporal evolution. Its foundation is Koopman Operator theory, which recasts nonlinear systems as linear operators. We estimate these operators from data, then compare the operators across systems. The computation is fast, scalable, and robust to noise and partial observation. It is also differentiable. DSA identifies dynamical structure that geometric and topological methods miss. It matches recordings from the head direction circuit to ring attractor models. It shows that macaque motor cortex dynamics for two reaching tasks drift apart across years despite preserved behavior, and that primary motor cortex breaks from premotor cortex as movement begins. As an optimization objective, it induces neural networks to learn never-before hypothesized solutions that run counter to their inductive biases. Thus, DSA transforms the dynamics of a system into an object that can be measured, compared, and optimized.
 
 Code Authors: Mitchell Ostrow, Adam Eisen, Leo Kozachkov, Ann Huang
 Formatted using the Black Style (https://black.readthedocs.io/en/stable/)
@@ -39,6 +46,19 @@ If you use this code, please cite:
       archivePrefix={arXiv},
       primaryClass={q-bio.NC}
 }
+
+@article{ostrow2026metric,
+	author = {Ostrow, Mitchell and Eisen, Adam J. and Kozachkov, Leo and Redman, William T. and Fiete, Ila},
+	title = {A metric for comparing complex systems by their dynamics},
+	elocation-id = {2026.07.16.738953},
+	year = {2026},
+	doi = {10.64898/2026.07.16.738953},
+	publisher = {Cold Spring Harbor Laboratory},
+	URL = {https://www.biorxiv.org/content/early/2026/08/17/2026.07.16.738953},
+	eprint = {https://www.biorxiv.org/content/early/2026/08/17/2026.07.16.738953.full.pdf},
+	journal = {bioRxiv}
+}
+
 
 ```
 
