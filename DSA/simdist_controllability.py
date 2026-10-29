@@ -151,19 +151,22 @@ class ControllabilitySimilarityTransformDist:
         C : (n×n) orthogonal state transform
         C_u : (p×p) orthogonal input/right transform (identity in updated version)
         err : Frobenius residual
-        cos_sim : cosine similarity between K1 and aligned K2
+        cos_sim : cosine similarity between aligned K1 (C @ K1) and K2
         """
         # Build controllability matrices: K \in R^{n x p}
         K1 = self.get_controllability_matrix(A1, B1)
         K2 = self.get_controllability_matrix(A2, B2)
         if not align_inputs:
-            # One-sided: C = argmin ||K1 - C K2||_F
+            # One-sided: C = argmin ||C K1 - K2||_F
+            # C maps system 1 onto system 2, consistent with C @ A1 @ C.T vs A2
+            # in fit_score. (The SVD of K2 K1^T yields this direction; the
+            # minimizer of ||K1 - C K2|| would be C.T, so score C K1 against K2.)
             M = K2 @ K1.T
             U, _, Vh = np.linalg.svd(M, full_matrices=False)
             C = U @ Vh
-            K2_aligned = C @ K2
-            err = np.linalg.norm(K1 - K2_aligned, "fro")
-            cos_sim = np.vdot(K1, K2_aligned).real / (
+            K1_aligned = C @ K1
+            err = np.linalg.norm(K1_aligned - K2, "fro")
+            cos_sim = np.vdot(K1_aligned, K2).real / (
                 np.linalg.norm(K1, "fro") * np.linalg.norm(K2, "fro")
             )
             cos_sim = np.clip(cos_sim, -1, 1)
